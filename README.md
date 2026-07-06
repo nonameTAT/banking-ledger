@@ -1,0 +1,8 @@
+- [x] Spring Boot started
+- [x] PostgreSQL container started
+- [x] Database connection successful
+- [x] Flyway initialized successfully
+- [x] Create the first migration
+- [x] Create the Account entity
+- [ ] Create the Account repository
+- [ ] Create the account creation API
