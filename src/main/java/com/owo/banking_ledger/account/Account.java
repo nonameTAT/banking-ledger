@@ -46,6 +46,14 @@ public class Account {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_kind", nullable = false)
+    private AccountKind accountKind;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_category", nullable = false)
+    private AccountCategory accountCategory;
+
     protected Account() {
     }
 
@@ -60,6 +68,8 @@ public class Account {
         this.balance = BigDecimal.ZERO;
         this.version = 0L;
         this.createdAt = Instant.now();
+        this.accountKind = AccountKind.CUSTOMER;
+        this.accountCategory = AccountCategory.LIABILITY;
     }
 
 }
