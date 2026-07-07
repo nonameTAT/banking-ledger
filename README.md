@@ -4,5 +4,10 @@
 - [x] Flyway initialized successfully
 - [x] Create the first migration
 - [x] Create the Account entity
-- [ ] Create the Account repository
-- [ ] Create the account creation API
+- [x] Create the Account repository
+- [x] Create the account creation API
+  - [x] `POST /api/accounts` — Create an account
+  - [x] `GET /api/accounts/{id}` — Retrieve an account
+  - [x] Return `404 Not Found` when the account does not exist
+  - [x] Return `400 Bad Request` for invalid requests
+  - [x] Successfully persist account data to PostgreSQL

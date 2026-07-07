@@ -31,8 +31,7 @@ public class AccountService {
     @Transactional(readOnly = true)
     public AccountResponse findById(Long id) {
         Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Account not found: " + id));
+                .orElseThrow(() -> new AccountNotFoundException(id));
 
         return AccountResponse.from(account);
     }
