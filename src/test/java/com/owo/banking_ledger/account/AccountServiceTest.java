@@ -19,11 +19,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
+
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
 
     @Mock
     private AccountRepository accountRepository;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private AccountService accountService;
@@ -55,6 +61,10 @@ class AccountServiceTest {
         assertEquals(BigDecimal.ZERO, savedAccount.getBalance());
         assertNotNull(savedAccount.getCreatedAt());
         assertTrue(savedAccount.getAccountNumber().matches("[A-F0-9]{16}"));
+        verify(auditLogService).recordAccountEvent(
+                AuditAction.ACCOUNT_CREATED,
+                1L,
+                "Account created");
     }
 
     @Test
@@ -97,6 +107,10 @@ class AccountServiceTest {
 
         assertEquals(AccountStatus.FROZEN, account.getStatus());
         assertEquals(AccountStatus.FROZEN, response.status());
+        verify(auditLogService).recordAccountEvent(
+                AuditAction.ACCOUNT_FROZEN,
+                1L,
+                "Account frozen");
     }
 
     @Test
@@ -112,6 +126,10 @@ class AccountServiceTest {
 
         assertEquals(AccountStatus.ACTIVE, account.getStatus());
         assertEquals(AccountStatus.ACTIVE, response.status());
+        verify(auditLogService).recordAccountEvent(
+                AuditAction.ACCOUNT_UNFROZEN,
+                1L,
+                "Account unfrozen");
     }
 
     @Test

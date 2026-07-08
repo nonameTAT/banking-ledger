@@ -10,6 +10,8 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
@@ -24,14 +26,17 @@ public class DepositService {
     private final AccountRepository accountRepository;
     private final LedgerTransactionRepository transactionRepository;
     private final LedgerEntryRepository entryRepository;
+    private final AuditLogService auditLogService;
 
     public DepositService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
-            LedgerEntryRepository entryRepository) {
+            LedgerEntryRepository entryRepository,
+            AuditLogService auditLogService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -79,6 +84,14 @@ public class DepositService {
                 List.of(systemEntry, customerEntry));
 
         transaction.complete();
+        auditLogService.recordTransactionEvent(
+                AuditAction.DEPOSIT_COMPLETED,
+                customerAccount.getId(),
+                null,
+                transaction,
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getDescription());
 
         return new DepositResponse(
                 transaction.getId(),

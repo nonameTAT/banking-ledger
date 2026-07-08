@@ -5,13 +5,20 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
+
 @Service
 public class AccountService {
 
     private final AccountRepository accountRepository;
+    private final AuditLogService auditLogService;
 
-    public AccountService(AccountRepository accountRepository) {
+    public AccountService(
+            AccountRepository accountRepository,
+            AuditLogService auditLogService) {
         this.accountRepository = accountRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -24,6 +31,10 @@ public class AccountService {
                 request.currency());
 
         Account savedAccount = accountRepository.save(account);
+        auditLogService.recordAccountEvent(
+                AuditAction.ACCOUNT_CREATED,
+                savedAccount.getId(),
+                "Account created");
 
         return AccountResponse.from(savedAccount);
     }
@@ -42,6 +53,10 @@ public class AccountService {
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
         account.freeze();
+        auditLogService.recordAccountEvent(
+                AuditAction.ACCOUNT_FROZEN,
+                account.getId(),
+                "Account frozen");
 
         return AccountResponse.from(account);
     }
@@ -52,6 +67,10 @@ public class AccountService {
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
         account.unfreeze();
+        auditLogService.recordAccountEvent(
+                AuditAction.ACCOUNT_UNFROZEN,
+                account.getId(),
+                "Account unfrozen");
 
         return AccountResponse.from(account);
     }

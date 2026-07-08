@@ -21,6 +21,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Withdraw money from customer accounts
 - Transfer money between customer accounts
 - Query paginated ledger entries for an account
+- Query paginated audit logs for an account
 - Idempotency check through unique `referenceId`
 - Pessimistic account locking for balance-changing operations
 - Global exception handling with structured JSON errors
@@ -55,16 +56,18 @@ Each business transaction creates:
 
 ```text
 src/main/java/com/owo/banking_ledger
-├── account      # Account entity, repository, service, controller
-├── deposit      # Deposit API and business logic
-├── withdrawal   # Withdrawal API and business logic
-├── transfer     # Transfer API and business logic
-├── ledger       # Ledger transaction/entry entities and query API
-└── common       # Global exception handling
+├── account # Account entity, repository, service, controller
+├── deposit # Deposit API and business logic
+├── withdrawal # Withdrawal API and business logic
+├── transfer # Transfer API and business logic
+├── audit # Audit log entity, service, and query API
+├── ledger # Ledger transaction/entry entities and query API
+└── common # Global exception handling
 
 src/main/resources/db/migration
 ├── V1__create_accounts.sql
-└── V2__create_ledger.sql
+├── V2__create_ledger.sql
+└── V3__create_audit_logs.sql
 ```
 
 ## Prerequisites
@@ -227,6 +230,39 @@ Response shape:
 }
 ```
 
+### Query Account Audit Logs
+
+```bash
+curl -i "http://localhost:8080/api/accounts/2/audit-logs?page=0&size=20&sort=createdAt,desc"
+```
+
+Audit logs are written for account creation, account freeze/unfreeze, completed deposits, completed withdrawals, and completed transfers. Transfer audit logs can be queried from either the source or target account.
+
+Response shape:
+
+```json
+{
+  "content": [
+    {
+      "id": 1,
+      "action": "DEPOSIT_COMPLETED",
+      "accountId": 2,
+      "relatedAccountId": null,
+      "transactionId": 1,
+      "referenceId": "deposit-001",
+      "amount": 100.0,
+      "currency": "AUD",
+      "details": "Initial deposit",
+      "createdAt": "2026-07-08T00:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
 ## Error Responses
 
 Errors are returned as structured JSON:
@@ -266,7 +302,7 @@ Examples:
 The test suite includes:
 
 - Service unit tests for account, deposit, withdrawal, and transfer logic
-- Web MVC tests for account, deposit, withdrawal, transfer, and ledger query APIs
+- Web MVC tests for account, deposit, withdrawal, transfer, ledger query, and audit log APIs
 - Full banking flow integration test
 - Concurrency integration tests for simultaneous withdrawals and transfers
 

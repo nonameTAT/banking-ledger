@@ -23,6 +23,8 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountCategory;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
@@ -44,6 +46,9 @@ class WithdrawalServiceTest {
 
     @Mock
     private LedgerEntryRepository entryRepository;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private WithdrawalService withdrawalService;
@@ -102,6 +107,14 @@ class WithdrawalServiceTest {
                 new BigDecimal("60.0000"));
         assertEntry(entries.get(1), 1L, EntryType.CREDIT, new BigDecimal("40.0000"),
                 new BigDecimal("60.0000"));
+        verify(auditLogService).recordTransactionEvent(
+                AuditAction.WITHDRAWAL_COMPLETED,
+                2L,
+                null,
+                transaction,
+                new BigDecimal("40.0000"),
+                "AUD",
+                "ATM withdrawal");
     }
 
     @Test
@@ -152,6 +165,14 @@ class WithdrawalServiceTest {
 
         assertEquals("Account is not active", exception.getMessage());
         verify(entryRepository, never()).saveAll(any());
+        verify(auditLogService, never()).recordTransactionEvent(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any());
     }
 
     private static Account customerAccount(Long id, String ownerName, String currency) {
