@@ -27,12 +27,14 @@ class OpenApiDocumentationTest {
                 .andExpect(jsonPath("$.paths['/api/accounts']").exists())
                 .andExpect(jsonPath("$.paths['/api/accounts/{id}/freeze']").exists())
                 .andExpect(jsonPath("$.paths['/api/accounts/{id}/unfreeze']").exists())
+                .andExpect(jsonPath("$.paths['/api/accounts/{accountId}/audit-logs']").exists())
                 .andExpect(jsonPath("$.paths['/api/transfers']").exists())
                 .andExpect(jsonPath("$.tags[*].name").value(hasItems(
                         "Accounts",
                         "Deposits",
                         "Withdrawals",
                         "Transfers",
-                        "Ledger")));
+                        "Ledger",
+                        "Audit Logs")));
     }
 }

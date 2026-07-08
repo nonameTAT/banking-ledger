@@ -9,6 +9,8 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
@@ -24,14 +26,17 @@ public class WithdrawalService {
     private final AccountRepository accountRepository;
     private final LedgerTransactionRepository transactionRepository;
     private final LedgerEntryRepository entryRepository;
+    private final AuditLogService auditLogService;
 
     public WithdrawalService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
-            LedgerEntryRepository entryRepository) {
+            LedgerEntryRepository entryRepository,
+            AuditLogService auditLogService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -85,6 +90,14 @@ public class WithdrawalService {
                 List.of(customerEntry, systemEntry));
 
         transaction.complete();
+        auditLogService.recordTransactionEvent(
+                AuditAction.WITHDRAWAL_COMPLETED,
+                customerAccount.getId(),
+                null,
+                transaction,
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getDescription());
 
         return new WithdrawalResponse(
                 transaction.getId(),

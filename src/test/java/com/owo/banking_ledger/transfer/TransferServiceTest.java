@@ -23,6 +23,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
@@ -44,6 +46,9 @@ class TransferServiceTest {
 
     @Mock
     private LedgerEntryRepository entryRepository;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private TransferService transferService;
@@ -105,6 +110,14 @@ class TransferServiceTest {
                 new BigDecimal("65.0000"));
         assertEntry(entries.get(1), 4L, EntryType.CREDIT, new BigDecimal("35.0000"),
                 new BigDecimal("55.0000"));
+        verify(auditLogService).recordTransactionEvent(
+                AuditAction.TRANSFER_COMPLETED,
+                2L,
+                4L,
+                transaction,
+                new BigDecimal("35.0000"),
+                "AUD",
+                "Rent");
     }
 
     @Test
@@ -207,6 +220,14 @@ class TransferServiceTest {
 
         assertEquals("Account is not active", exception.getMessage());
         verify(entryRepository, never()).saveAll(any());
+        verify(auditLogService, never()).recordTransactionEvent(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any());
     }
 
     private static Account customerAccount(Long id, String ownerName, String currency) {

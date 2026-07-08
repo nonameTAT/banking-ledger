@@ -25,6 +25,7 @@ import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.account.AccountResponse;
 import com.owo.banking_ledger.account.AccountService;
 import com.owo.banking_ledger.account.CreateAccountRequest;
+import com.owo.banking_ledger.audit.AuditLogRepository;
 import com.owo.banking_ledger.deposit.DepositRequest;
 import com.owo.banking_ledger.deposit.DepositService;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
@@ -61,11 +62,21 @@ class BankingConcurrencyIntegrationTest {
     @Autowired
     private LedgerEntryRepository entryRepository;
 
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
     private final List<Long> createdAccountIds = Collections.synchronizedList(new ArrayList<>());
     private final List<String> referenceIds = Collections.synchronizedList(new ArrayList<>());
 
     @AfterEach
     void cleanUp() {
+        if (!createdAccountIds.isEmpty()) {
+            auditLogRepository.deleteAll(
+                    auditLogRepository.findByAccountIdInOrRelatedAccountIdIn(
+                            createdAccountIds,
+                            createdAccountIds));
+        }
+
         List<LedgerTransaction> transactions = referenceIds.stream()
                 .flatMap(referenceId -> transactionRepository
                         .findByReferenceId(referenceId)

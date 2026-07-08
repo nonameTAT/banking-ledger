@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -23,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jayway.jsonpath.JsonPath;
 import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.audit.AuditAction;
+import com.owo.banking_ledger.audit.AuditLogRepository;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
@@ -47,6 +50,9 @@ class BankingFlowIntegrationTest {
 
         @Autowired
         private LedgerEntryRepository entryRepository;
+
+        @Autowired
+        private AuditLogRepository auditLogRepository;
 
         @Test
         void depositWithdrawalTransferAndLedgerQueryUpdateBalancesAndLedger() throws Exception {
@@ -138,6 +144,14 @@ class BankingFlowIntegrationTest {
                                 EntryType.DEBIT, EntryType.CREDIT);
                 assertTransaction(transferReferenceId, TransactionType.TRANSFER,
                                 EntryType.DEBIT, EntryType.CREDIT);
+                assertAuditLogActions(sourceAccountId, List.of(
+                                AuditAction.ACCOUNT_CREATED,
+                                AuditAction.DEPOSIT_COMPLETED,
+                                AuditAction.WITHDRAWAL_COMPLETED,
+                                AuditAction.TRANSFER_COMPLETED));
+                assertAuditLogActions(targetAccountId, List.of(
+                                AuditAction.ACCOUNT_CREATED,
+                                AuditAction.TRANSFER_COMPLETED));
         }
 
         private Long createAccount(String ownerName) throws Exception {
@@ -177,6 +191,20 @@ class BankingFlowIntegrationTest {
                 assertEquals(2, entries.size());
                 assertTrue(entries.stream().anyMatch(entry -> entry.getEntryType() == firstEntryType));
                 assertTrue(entries.stream().anyMatch(entry -> entry.getEntryType() == secondEntryType));
+        }
+
+        private void assertAuditLogActions(
+                        Long accountId,
+                        List<AuditAction> expectedActions) {
+                List<AuditAction> actions = auditLogRepository
+                                .findByAccountIdOrRelatedAccountIdOrderByCreatedAtDesc(
+                                                accountId,
+                                                accountId,
+                                                PageRequest.of(0, 10))
+                                .map(auditLog -> auditLog.getAction())
+                                .getContent();
+
+                assertTrue(actions.containsAll(expectedActions));
         }
 
         private static void assertBigDecimalEquals(

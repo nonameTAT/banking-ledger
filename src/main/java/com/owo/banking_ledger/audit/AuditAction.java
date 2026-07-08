@@ -1,0 +1,10 @@
+package com.owo.banking_ledger.audit;
+
+public enum AuditAction {
+    ACCOUNT_CREATED,
+    ACCOUNT_FROZEN,
+    ACCOUNT_UNFROZEN,
+    DEPOSIT_COMPLETED,
+    WITHDRAWAL_COMPLETED,
+    TRANSFER_COMPLETED
+}
