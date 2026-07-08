@@ -23,6 +23,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountCategory;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
@@ -121,6 +122,35 @@ class WithdrawalServiceTest {
         assertEquals("Transaction reference already exists: withdrawal-001",
                 exception.getMessage());
         verify(accountRepository, never()).findByAccountNumberForUpdate(any());
+        verify(entryRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void withdrawRejectsFrozenAccount() {
+        Account systemAccount = systemCashAccount(new BigDecimal("100.0000"));
+        Account customerAccount = customerAccount(2L, "Alice", "AUD");
+        customerAccount.credit(new BigDecimal("100.0000"));
+        customerAccount.freeze();
+        WithdrawalRequest request = new WithdrawalRequest(
+                new BigDecimal("40.0000"),
+                "AUD",
+                "withdrawal-002",
+                null);
+
+        when(transactionRepository.existsByReferenceId("withdrawal-002"))
+                .thenReturn(false);
+        when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
+                .thenReturn(Optional.of(systemAccount));
+        when(accountRepository.findByIdForUpdate(2L))
+                .thenReturn(Optional.of(customerAccount));
+        when(transactionRepository.save(any(LedgerTransaction.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> withdrawalService.withdraw(2L, request));
+
+        assertEquals("Account is not active", exception.getMessage());
         verify(entryRepository, never()).saveAll(any());
     }
 

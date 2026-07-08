@@ -113,4 +113,42 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("Account not found: 99"));
     }
+
+    @Test
+    void freezeReturnsFrozenAccount() throws Exception {
+        AccountResponse response = new AccountResponse(
+                1L,
+                "ABCDEF1234567890",
+                "Alice",
+                "AUD",
+                AccountStatus.FROZEN,
+                BigDecimal.ZERO,
+                Instant.parse("2026-07-08T00:00:00Z"));
+
+        when(accountService.freeze(1L)).thenReturn(response);
+
+        mockMvc.perform(post("/api/accounts/1/freeze"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("FROZEN"));
+    }
+
+    @Test
+    void unfreezeReturnsActiveAccount() throws Exception {
+        AccountResponse response = new AccountResponse(
+                1L,
+                "ABCDEF1234567890",
+                "Alice",
+                "AUD",
+                AccountStatus.ACTIVE,
+                BigDecimal.ZERO,
+                Instant.parse("2026-07-08T00:00:00Z"));
+
+        when(accountService.unfreeze(1L)).thenReturn(response);
+
+        mockMvc.perform(post("/api/accounts/1/unfreeze"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
 }

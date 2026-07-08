@@ -178,6 +178,37 @@ class TransferServiceTest {
         verify(transactionRepository, never()).existsByReferenceId(any());
     }
 
+    @Test
+    void transferRejectsFrozenSourceAccount() {
+        Account source = customerAccount(2L, "Alice", "AUD");
+        source.credit(new BigDecimal("100.0000"));
+        source.freeze();
+        Account target = customerAccount(4L, "Bob", "AUD");
+        TransferRequest request = new TransferRequest(
+                2L,
+                4L,
+                new BigDecimal("35.0000"),
+                "AUD",
+                "transfer-003",
+                null);
+
+        when(transactionRepository.existsByReferenceId("transfer-003"))
+                .thenReturn(false);
+        when(accountRepository.findByIdForUpdate(2L))
+                .thenReturn(Optional.of(source));
+        when(accountRepository.findByIdForUpdate(4L))
+                .thenReturn(Optional.of(target));
+        when(transactionRepository.save(any(LedgerTransaction.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> transferService.transfer(request));
+
+        assertEquals("Account is not active", exception.getMessage());
+        verify(entryRepository, never()).saveAll(any());
+    }
+
     private static Account customerAccount(Long id, String ownerName, String currency) {
         Account account = new Account("CUSTOMER-" + id, ownerName, currency);
         ReflectionTestUtils.setField(account, "id", id);

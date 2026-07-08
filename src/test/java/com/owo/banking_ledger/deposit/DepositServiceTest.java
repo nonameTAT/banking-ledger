@@ -23,6 +23,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountCategory;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
@@ -117,6 +118,34 @@ class DepositServiceTest {
         assertEquals("Transaction reference already exists: deposit-001",
                 exception.getMessage());
         verify(accountRepository, never()).findByAccountNumberForUpdate(any());
+        verify(entryRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void depositRejectsFrozenAccount() {
+        Account systemAccount = systemCashAccount();
+        Account customerAccount = customerAccount(2L, "Alice", "AUD");
+        customerAccount.freeze();
+        DepositRequest request = new DepositRequest(
+                new BigDecimal("100.0000"),
+                "AUD",
+                "deposit-002",
+                null);
+
+        when(transactionRepository.existsByReferenceId("deposit-002"))
+                .thenReturn(false);
+        when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
+                .thenReturn(Optional.of(systemAccount));
+        when(accountRepository.findByIdForUpdate(2L))
+                .thenReturn(Optional.of(customerAccount));
+        when(transactionRepository.saveAndFlush(any(LedgerTransaction.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> depositService.deposit(2L, request));
+
+        assertEquals("Account is not active", exception.getMessage());
         verify(entryRepository, never()).saveAll(any());
     }
 

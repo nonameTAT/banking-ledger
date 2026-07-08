@@ -16,6 +16,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 ## Core Features
 
 - Create and fetch customer accounts
+- Freeze and unfreeze customer accounts
 - Deposit money into customer accounts
 - Withdraw money from customer accounts
 - Transfer money between customer accounts
@@ -140,6 +141,20 @@ curl -i -X POST http://localhost:8080/api/accounts \
 
 ```bash
 curl -i http://localhost:8080/api/accounts/2
+```
+
+### Freeze Account
+
+```bash
+curl -i -X POST http://localhost:8080/api/accounts/2/freeze
+```
+
+Frozen accounts reject deposits, withdrawals, and transfers until they are unfrozen.
+
+### Unfreeze Account
+
+```bash
+curl -i -X POST http://localhost:8080/api/accounts/2/unfreeze
 ```
 
 ### Deposit
