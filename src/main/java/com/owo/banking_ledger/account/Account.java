@@ -106,6 +106,22 @@ public class Account {
         }
     }
 
+    public void freeze() {
+        if (status == AccountStatus.CLOSED) {
+            throw BusinessException.invalidRequest("Closed accounts cannot be frozen");
+        }
+
+        status = AccountStatus.FROZEN;
+    }
+
+    public void unfreeze() {
+        if (status == AccountStatus.CLOSED) {
+            throw BusinessException.invalidRequest("Closed accounts cannot be unfrozen");
+        }
+
+        status = AccountStatus.ACTIVE;
+    }
+
     private void validatePosting(BigDecimal amount) {
         if (status != AccountStatus.ACTIVE) {
             throw BusinessException.invalidRequest("Account is not active");

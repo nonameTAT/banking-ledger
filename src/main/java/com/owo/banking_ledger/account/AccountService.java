@@ -36,6 +36,26 @@ public class AccountService {
         return AccountResponse.from(account);
     }
 
+    @Transactional
+    public AccountResponse freeze(Long id) {
+        Account account = accountRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        account.freeze();
+
+        return AccountResponse.from(account);
+    }
+
+    @Transactional
+    public AccountResponse unfreeze(Long id) {
+        Account account = accountRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new AccountNotFoundException(id));
+
+        account.unfreeze();
+
+        return AccountResponse.from(account);
+    }
+
     private String generateAccountNumber() {
         return UUID.randomUUID()
                 .toString()

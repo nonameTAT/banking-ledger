@@ -84,4 +84,45 @@ class AccountServiceTest {
 
         assertEquals("Account not found: 99", exception.getMessage());
     }
+
+    @Test
+    void freezeMarksAccountFrozen() {
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD");
+        ReflectionTestUtils.setField(account, "id", 1L);
+
+        when(accountRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(account));
+
+        AccountResponse response = accountService.freeze(1L);
+
+        assertEquals(AccountStatus.FROZEN, account.getStatus());
+        assertEquals(AccountStatus.FROZEN, response.status());
+    }
+
+    @Test
+    void unfreezeMarksAccountActive() {
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD");
+        ReflectionTestUtils.setField(account, "id", 1L);
+        account.freeze();
+
+        when(accountRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(account));
+
+        AccountResponse response = accountService.unfreeze(1L);
+
+        assertEquals(AccountStatus.ACTIVE, account.getStatus());
+        assertEquals(AccountStatus.ACTIVE, response.status());
+    }
+
+    @Test
+    void freezeThrowsWhenAccountDoesNotExist() {
+        when(accountRepository.findByIdForUpdate(99L))
+                .thenReturn(Optional.empty());
+
+        AccountNotFoundException exception = assertThrows(
+                AccountNotFoundException.class,
+                () -> accountService.freeze(99L));
+
+        assertEquals("Account not found: 99", exception.getMessage());
+    }
 }

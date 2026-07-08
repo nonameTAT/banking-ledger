@@ -38,4 +38,16 @@ public class AccountController {
         return accountService.findById(id);
     }
 
+    @PostMapping("/{id}/freeze")
+    @Operation(summary = "Freeze an account")
+    public AccountResponse freeze(@PathVariable Long id) {
+        return accountService.freeze(id);
+    }
+
+    @PostMapping("/{id}/unfreeze")
+    @Operation(summary = "Unfreeze an account")
+    public AccountResponse unfreeze(@PathVariable Long id) {
+        return accountService.unfreeze(id);
+    }
+
 }
