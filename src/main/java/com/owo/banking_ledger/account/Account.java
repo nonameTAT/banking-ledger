@@ -72,4 +72,46 @@ public class Account {
         this.accountCategory = AccountCategory.LIABILITY;
     }
 
+    public void debit(BigDecimal amount) {
+        validatePosting(amount);
+
+        switch (accountCategory) {
+            case ASSET -> balance = balance.add(amount);
+
+            case LIABILITY -> {
+                if (balance.compareTo(amount) < 0) {
+                    throw new IllegalStateException("Insufficient balance");
+                }
+
+                balance = balance.subtract(amount);
+            }
+        }
+    }
+
+    public void credit(BigDecimal amount) {
+        validatePosting(amount);
+
+        switch (accountCategory) {
+            case ASSET -> {
+                if (balance.compareTo(amount) < 0) {
+                    throw new IllegalStateException("Insufficient balance");
+                }
+
+                balance = balance.subtract(amount);
+            }
+
+            case LIABILITY -> balance = balance.add(amount);
+        }
+    }
+
+    private void validatePosting(BigDecimal amount) {
+        if (status != AccountStatus.ACTIVE) {
+            throw new IllegalStateException("Account is not active");
+        }
+
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+    }
+
 }
