@@ -8,6 +8,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@Tag(name = "Ledger", description = "Query account ledger entries")
 @RestController
 @RequestMapping("/api/accounts/{accountId}/entries")
 public class LedgerQueryController {
@@ -19,6 +23,7 @@ public class LedgerQueryController {
     }
 
     @GetMapping
+    @Operation(summary = "Get paginated account ledger entries")
     public LedgerEntryPageResponse findEntries(
             @PathVariable Long accountId,
             @PageableDefault(
