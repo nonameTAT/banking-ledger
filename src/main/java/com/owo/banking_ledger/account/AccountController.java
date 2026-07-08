@@ -32,4 +32,5 @@ public class AccountController {
     public AccountResponse findById(@PathVariable Long id) {
         return accountService.findById(id);
     }
+
 }
