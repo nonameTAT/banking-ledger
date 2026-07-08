@@ -9,8 +9,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Accounts", description = "Create and read customer accounts")
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
@@ -23,12 +26,14 @@ public class AccountController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create a customer account")
     public AccountResponse create(
             @Valid @RequestBody CreateAccountRequest request) {
         return accountService.create(request);
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "Get an account by id")
     public AccountResponse findById(@PathVariable Long id) {
         return accountService.findById(id);
     }

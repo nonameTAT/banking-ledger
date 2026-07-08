@@ -111,6 +111,20 @@ Some tests start a full Spring context and connect to the local PostgreSQL insta
 
 ## API
 
+### OpenAPI / Swagger
+
+Swagger UI:
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+OpenAPI JSON:
+
+```text
+http://localhost:8080/v3/api-docs
+```
+
 ### Create Account
 
 ```bash

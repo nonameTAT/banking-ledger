@@ -7,8 +7,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Transfers", description = "Transfer money between customer accounts")
 @RestController
 @RequestMapping("/api/transfers")
 public class TransferController {
@@ -21,6 +24,7 @@ public class TransferController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Transfer money between two customer accounts")
     public TransferResponse transfer(
             @Valid @RequestBody TransferRequest request) {
         return transferService.transfer(request);

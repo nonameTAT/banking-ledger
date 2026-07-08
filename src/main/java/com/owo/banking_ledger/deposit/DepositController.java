@@ -8,8 +8,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
+@Tag(name = "Deposits", description = "Deposit money into customer accounts")
 @RestController
 @RequestMapping("/api/accounts/{accountId}/deposits")
 public class DepositController {
@@ -22,6 +25,7 @@ public class DepositController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Deposit money into an account")
     public DepositResponse deposit(
             @PathVariable Long accountId,
             @Valid @RequestBody DepositRequest request) {
