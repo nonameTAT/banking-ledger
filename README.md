@@ -95,7 +95,7 @@ http://localhost:8080
 Database configuration:
 
 ```text
-url:      jdbc:postgresql://localhost:5433/banking_ledger
+url: jdbc:postgresql://localhost:5433/banking_ledger
 database: banking_ledger
 username: banking
 password: banking
@@ -186,8 +186,8 @@ Response shape:
       "referenceId": "deposit-001",
       "transactionType": "DEPOSIT",
       "entryType": "CREDIT",
-      "amount": 100.0000,
-      "balanceAfter": 100.0000,
+      "amount": 100.0,
+      "balanceAfter": 100.0,
       "createdAt": "2026-07-08T00:00:00Z"
     }
   ],
