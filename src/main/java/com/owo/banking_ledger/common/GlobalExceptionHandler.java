@@ -1,67 +1,64 @@
 package com.owo.banking_ledger.common;
 
-import java.time.Instant;
-import java.util.Map;
-
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import com.owo.banking_ledger.account.AccountNotFoundException;
-import com.owo.banking_ledger.deposit.DuplicateTransactionException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(AccountNotFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public Map<String, Object> handleAccountNotFound(
-            AccountNotFoundException exception) {
-        return Map.of(
-                "timestamp", Instant.now(),
-                "code", "ACCOUNT_NOT_FOUND",
-                "message", exception.getMessage());
-    }
-
-    @ExceptionHandler(DuplicateTransactionException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Map<String, Object> handleDuplicateTransaction(
-            DuplicateTransactionException exception) {
-        return Map.of(
-                "timestamp", Instant.now(),
-                "code", "DUPLICATE_TRANSACTION",
-                "message", exception.getMessage());
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessException(
+            BusinessException exception) {
+        return ResponseEntity
+                .status(exception.getCode().status())
+                .body(ErrorResponse.from(exception));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Map<String, Object> handleDataIntegrityViolation(
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
             DataIntegrityViolationException exception) {
-        return Map.of(
-                "timestamp", Instant.now(),
-                "code", "DATA_INTEGRITY_VIOLATION",
-                "message", "Request conflicts with existing data");
+        return ResponseEntity
+                .status(BusinessErrorCode.DATA_INTEGRITY_VIOLATION.status())
+                .body(ErrorResponse.of(
+                        BusinessErrorCode.DATA_INTEGRITY_VIOLATION,
+                        "Request conflicts with existing data"));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(
+            MethodArgumentNotValidException exception) {
+        String message = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .findFirst()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .orElse("Request validation failed");
+
+        return ResponseEntity
+                .status(BusinessErrorCode.INVALID_REQUEST.status())
+                .body(ErrorResponse.of(BusinessErrorCode.INVALID_REQUEST, message));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, Object> handleIllegalArgument(
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(
             IllegalArgumentException exception) {
-        return Map.of(
-                "timestamp", Instant.now(),
-                "code", "INVALID_REQUEST",
-                "message", exception.getMessage());
+        return ResponseEntity
+                .status(BusinessErrorCode.INVALID_REQUEST.status())
+                .body(ErrorResponse.of(
+                        BusinessErrorCode.INVALID_REQUEST,
+                        exception.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public Map<String, Object> handleIllegalState(
+    public ResponseEntity<ErrorResponse> handleIllegalState(
             IllegalStateException exception) {
-        return Map.of(
-                "timestamp", Instant.now(),
-                "code", "INVALID_REQUEST",
-                "message", exception.getMessage());
+        return ResponseEntity
+                .status(BusinessErrorCode.INVALID_REQUEST.status())
+                .body(ErrorResponse.of(
+                        BusinessErrorCode.INVALID_REQUEST,
+                        exception.getMessage()));
     }
 }

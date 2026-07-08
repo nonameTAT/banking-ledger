@@ -3,6 +3,8 @@ package com.owo.banking_ledger.account;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import com.owo.banking_ledger.common.BusinessException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -80,7 +82,7 @@ public class Account {
 
             case LIABILITY -> {
                 if (balance.compareTo(amount) < 0) {
-                    throw new IllegalStateException("Insufficient balance");
+                    throw BusinessException.invalidRequest("Insufficient balance");
                 }
 
                 balance = balance.subtract(amount);
@@ -94,7 +96,7 @@ public class Account {
         switch (accountCategory) {
             case ASSET -> {
                 if (balance.compareTo(amount) < 0) {
-                    throw new IllegalStateException("Insufficient balance");
+                    throw BusinessException.invalidRequest("Insufficient balance");
                 }
 
                 balance = balance.subtract(amount);
@@ -106,11 +108,11 @@ public class Account {
 
     private void validatePosting(BigDecimal amount) {
         if (status != AccountStatus.ACTIVE) {
-            throw new IllegalStateException("Account is not active");
+            throw BusinessException.invalidRequest("Account is not active");
         }
 
         if (amount == null || amount.signum() <= 0) {
-            throw new IllegalArgumentException("Amount must be greater than zero");
+            throw BusinessException.invalidRequest("Amount must be greater than zero");
         }
     }
 

@@ -16,6 +16,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.owo.banking_ledger.account.AccountNotFoundException;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 
 @WebMvcTest(TransferController.class)
@@ -53,7 +54,7 @@ class TransferControllerTest {
     @Test
     void transferReturnsBadRequestForInsufficientBalance() throws Exception {
         when(transferService.transfer(any(TransferRequest.class)))
-                .thenThrow(new IllegalStateException("Insufficient balance"));
+                .thenThrow(BusinessException.invalidRequest("Insufficient balance"));
 
         mockMvc.perform(post("/api/transfers")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -75,7 +76,7 @@ class TransferControllerTest {
     @Test
     void transferReturnsBadRequestForSameSourceAndTargetAccount() throws Exception {
         when(transferService.transfer(any(TransferRequest.class)))
-                .thenThrow(new IllegalArgumentException(
+                .thenThrow(BusinessException.invalidRequest(
                         "Source and target accounts must be different"));
 
         mockMvc.perform(post("/api/transfers")

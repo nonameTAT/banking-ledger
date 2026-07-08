@@ -3,6 +3,8 @@ package com.owo.banking_ledger.ledger;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import com.owo.banking_ledger.common.BusinessException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -65,7 +67,7 @@ public class LedgerTransaction {
 
     public void complete() {
         if (status != TransactionStatus.PENDING) {
-            throw new IllegalStateException(
+            throw BusinessException.invalidRequest(
                     "Only pending transactions can be completed");
         }
 
@@ -74,7 +76,7 @@ public class LedgerTransaction {
 
     public void fail() {
         if (status != TransactionStatus.PENDING) {
-            throw new IllegalStateException(
+            throw BusinessException.invalidRequest(
                     "Only pending transactions can be failed");
         }
 

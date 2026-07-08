@@ -1,7 +1,7 @@
 package com.owo.banking_ledger.ledger;
 
-import java.util.List;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +22,15 @@ public class LedgerQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<LedgerEntryResponse> findAccountEntries(Long accountId) {
+    public Page<LedgerEntryResponse> findAccountEntries(
+            Long accountId,
+            Pageable pageable) {
         if (!accountRepository.existsById(accountId)) {
             throw new AccountNotFoundException(accountId);
         }
 
         return entryRepository
-                .findByAccountIdOrderByCreatedAtDesc(accountId)
-                .stream()
-                .map(LedgerEntryResponse::from)
-                .toList();
+                .findByAccountId(accountId, pageable)
+                .map(LedgerEntryResponse::from);
     }
 }
