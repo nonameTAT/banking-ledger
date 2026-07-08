@@ -54,4 +54,14 @@ public class GlobalExceptionHandler {
                 "code", "INVALID_REQUEST",
                 "message", exception.getMessage());
     }
+
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, Object> handleIllegalState(
+            IllegalStateException exception) {
+        return Map.of(
+                "timestamp", Instant.now(),
+                "code", "INVALID_REQUEST",
+                "message", exception.getMessage());
+    }
 }
