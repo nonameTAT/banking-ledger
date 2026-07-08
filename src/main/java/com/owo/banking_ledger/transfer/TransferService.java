@@ -9,6 +9,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
@@ -36,7 +37,7 @@ public class TransferService {
     @Transactional
     public TransferResponse transfer(TransferRequest request) {
         if (request.sourceAccountId().equals(request.targetAccountId())) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Source and target accounts must be different");
         }
 
@@ -117,13 +118,13 @@ public class TransferService {
             TransferRequest request) {
         if (source.getAccountKind() != AccountKind.CUSTOMER
                 || target.getAccountKind() != AccountKind.CUSTOMER) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Transfers require two customer accounts");
         }
 
         if (!source.getCurrency().equals(request.currency())
                 || !target.getCurrency().equals(request.currency())) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Both account currencies must match the request currency");
         }
     }

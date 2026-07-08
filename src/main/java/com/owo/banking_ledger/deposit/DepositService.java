@@ -10,6 +10,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
@@ -45,7 +46,7 @@ public class DepositService {
 
         Account systemAccount = accountRepository
                 .findByAccountNumberForUpdate(systemAccountNumber)
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> BusinessException.invalidRequest(
                         "System cash account not found: "
                                 + systemAccountNumber));
 
@@ -108,17 +109,17 @@ public class DepositService {
             Account systemAccount,
             DepositRequest request) {
         if (customerAccount.getAccountKind() != AccountKind.CUSTOMER) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Deposits can only be made to customer accounts");
         }
 
         if (!customerAccount.getCurrency().equals(request.currency())) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Customer account currency does not match request currency");
         }
 
         if (!systemAccount.getCurrency().equals(request.currency())) {
-            throw new IllegalStateException(
+            throw BusinessException.invalidRequest(
                     "System account currency does not match request currency");
         }
     }

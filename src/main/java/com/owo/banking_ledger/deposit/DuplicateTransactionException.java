@@ -1,8 +1,13 @@
 package com.owo.banking_ledger.deposit;
 
-public class DuplicateTransactionException extends RuntimeException {
+import com.owo.banking_ledger.common.BusinessErrorCode;
+import com.owo.banking_ledger.common.BusinessException;
+
+public class DuplicateTransactionException extends BusinessException {
 
     public DuplicateTransactionException(String referenceId) {
-        super("Transaction reference already exists: " + referenceId);
+        super(
+                BusinessErrorCode.DUPLICATE_TRANSACTION,
+                "Transaction reference already exists: " + referenceId);
     }
 }

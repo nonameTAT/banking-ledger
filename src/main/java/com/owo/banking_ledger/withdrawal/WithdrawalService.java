@@ -9,6 +9,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
@@ -46,7 +47,7 @@ public class WithdrawalService {
         // same lock order as deposit
         Account systemAccount = accountRepository
                 .findByAccountNumberForUpdate(systemAccountNumber)
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> BusinessException.invalidRequest(
                         "System cash account not found: " + systemAccountNumber));
 
         Account customerAccount = accountRepository
@@ -100,17 +101,17 @@ public class WithdrawalService {
             Account systemAccount,
             WithdrawalRequest request) {
         if (customerAccount.getAccountKind() != AccountKind.CUSTOMER) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Withdrawals are only allowed from customer accounts");
         }
 
         if (!customerAccount.getCurrency().equals(request.currency())) {
-            throw new IllegalArgumentException(
+            throw BusinessException.invalidRequest(
                     "Customer account currency does not match request currency");
         }
 
         if (!systemAccount.getCurrency().equals(request.currency())) {
-            throw new IllegalStateException(
+            throw BusinessException.invalidRequest(
                     "System account currency does not match request currency");
         }
     }

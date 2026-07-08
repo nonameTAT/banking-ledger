@@ -23,6 +23,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
 import com.owo.banking_ledger.ledger.LedgerEntry;
@@ -168,8 +169,8 @@ class TransferServiceTest {
                 "transfer-001",
                 null);
 
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
+        BusinessException exception = assertThrows(
+                BusinessException.class,
                 () -> transferService.transfer(request));
 
         assertEquals("Source and target accounts must be different",
