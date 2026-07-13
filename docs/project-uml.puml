@@ -1,0 +1,374 @@
+@startuml
+title Banking Ledger - Project Class Diagram
+
+skinparam packageStyle rectangle
+skinparam linetype ortho
+hide empty members
+
+package "com.owo.banking_ledger.account" as account {
+  class Account <<entity>> {
+    - Long id
+    - String accountNumber
+    - String ownerName
+    - String currency
+    - AccountStatus status
+    - BigDecimal balance
+    - Long version
+    - Instant createdAt
+    - AccountKind accountKind
+    - AccountCategory accountCategory
+    + debit(BigDecimal amount)
+    + credit(BigDecimal amount)
+    + freeze()
+    + unfreeze()
+  }
+
+  enum AccountStatus {
+    ACTIVE
+    FROZEN
+    CLOSED
+  }
+
+  enum AccountKind {
+    CUSTOMER
+    SYSTEM
+  }
+
+  enum AccountCategory {
+    ASSET
+    LIABILITY
+  }
+
+  interface AccountRepository <<repository>> {
+    + existsByAccountNumber(String accountNumber)
+    + findByAccountNumber(String accountNumber)
+    + findByIdForUpdate(Long id)
+    + findByAccountNumberForUpdate(String accountNumber)
+  }
+
+  class AccountService <<service>> {
+    + create(CreateAccountRequest request)
+    + findById(Long id)
+    + freeze(Long id)
+    + unfreeze(Long id)
+  }
+
+  class AccountController <<controller>> {
+    + create(CreateAccountRequest request)
+    + findById(Long id)
+    + freeze(Long id)
+    + unfreeze(Long id)
+  }
+
+  class CreateAccountRequest <<dto>> {
+    ownerName: String
+    currency: String
+  }
+
+  class AccountResponse <<dto>> {
+    id: Long
+    accountNumber: String
+    ownerName: String
+    currency: String
+    status: AccountStatus
+    balance: BigDecimal
+    createdAt: Instant
+  }
+
+  class AccountNotFoundException <<exception>>
+}
+
+package "com.owo.banking_ledger.ledger" as ledger {
+  class LedgerTransaction <<entity>> {
+    - Long id
+    - String referenceId
+    - TransactionType transactionType
+    - TransactionStatus status
+    - BigDecimal amount
+    - String currency
+    - String description
+    - Instant createdAt
+    + complete()
+    + fail()
+  }
+
+  class LedgerEntry <<entity>> {
+    - Long id
+    - LedgerTransaction transaction
+    - Account account
+    - EntryType entryType
+    - BigDecimal amount
+    - BigDecimal balanceAfter
+    - Instant createdAt
+  }
+
+  enum TransactionType {
+    DEPOSIT
+    WITHDRAWAL
+    TRANSFER
+  }
+
+  enum TransactionStatus {
+    PENDING
+    COMPLETED
+    FAILED
+  }
+
+  enum EntryType {
+    DEBIT
+    CREDIT
+  }
+
+  interface LedgerTransactionRepository <<repository>> {
+    + existsByReferenceId(String referenceId)
+    + findByReferenceId(String referenceId)
+  }
+
+  interface LedgerEntryRepository <<repository>> {
+    + findByAccountId(Long accountId, Pageable pageable)
+    + findByTransactionId(Long transactionId)
+  }
+
+  class LedgerQueryService <<service>> {
+    + findAccountEntries(Long accountId, Pageable pageable)
+  }
+
+  class LedgerQueryController <<controller>> {
+    + findEntries(Long accountId, Pageable pageable)
+  }
+
+  class LedgerEntryResponse <<dto>> {
+    id: Long
+    transactionId: Long
+    referenceId: String
+    transactionType: TransactionType
+    entryType: EntryType
+    amount: BigDecimal
+    balanceAfter: BigDecimal
+    createdAt: Instant
+  }
+
+  class LedgerEntryPageResponse <<dto>>
+}
+
+package "com.owo.banking_ledger.deposit" as deposit {
+  class DepositService <<service>> {
+    + deposit(Long accountId, DepositRequest request)
+  }
+
+  class DepositController <<controller>> {
+    + deposit(Long accountId, DepositRequest request)
+  }
+
+  class DepositRequest <<dto>> {
+    amount: BigDecimal
+    currency: String
+    referenceId: String
+    description: String
+  }
+
+  class DepositResponse <<dto>> {
+    transactionId: Long
+    referenceId: String
+    accountId: Long
+    amount: BigDecimal
+    currency: String
+    status: TransactionStatus
+    balanceAfter: BigDecimal
+  }
+
+  class DuplicateTransactionException <<exception>>
+}
+
+package "com.owo.banking_ledger.withdrawal" as withdrawal {
+  class WithdrawalService <<service>> {
+    + withdraw(Long accountId, WithdrawalRequest request)
+  }
+
+  class WithdrawalController <<controller>> {
+    + withdraw(Long accountId, WithdrawalRequest request)
+  }
+
+  class WithdrawalRequest <<dto>> {
+    amount: BigDecimal
+    currency: String
+    referenceId: String
+    description: String
+  }
+
+  class WithdrawalResponse <<dto>> {
+    transactionId: Long
+    referenceId: String
+    accountId: Long
+    amount: BigDecimal
+    currency: String
+    status: TransactionStatus
+    balanceAfter: BigDecimal
+  }
+}
+
+package "com.owo.banking_ledger.transfer" as transfer {
+  class TransferService <<service>> {
+    + transfer(TransferRequest request)
+  }
+
+  class TransferController <<controller>> {
+    + transfer(TransferRequest request)
+  }
+
+  class TransferRequest <<dto>> {
+    sourceAccountId: Long
+    targetAccountId: Long
+    amount: BigDecimal
+    currency: String
+    referenceId: String
+    description: String
+  }
+
+  class TransferResponse <<dto>> {
+    transactionId: Long
+    referenceId: String
+    sourceAccountId: Long
+    targetAccountId: Long
+    amount: BigDecimal
+    currency: String
+    status: TransactionStatus
+    sourceBalanceAfter: BigDecimal
+    targetBalanceAfter: BigDecimal
+  }
+}
+
+package "com.owo.banking_ledger.audit" as audit {
+  class AuditLog <<entity>> {
+    - Long id
+    - AuditAction action
+    - Long accountId
+    - Long relatedAccountId
+    - Long transactionId
+    - String referenceId
+    - BigDecimal amount
+    - String currency
+    - String details
+    - Instant createdAt
+  }
+
+  enum AuditAction {
+    ACCOUNT_CREATED
+    ACCOUNT_FROZEN
+    ACCOUNT_UNFROZEN
+    DEPOSIT_COMPLETED
+    WITHDRAWAL_COMPLETED
+    TRANSFER_COMPLETED
+  }
+
+  interface AuditLogRepository <<repository>> {
+    + findByAccountIdOrRelatedAccountIdOrderByCreatedAtDesc(...)
+    + findByAccountIdInOrRelatedAccountIdIn(...)
+  }
+
+  class AuditLogService <<service>> {
+    + recordAccountEvent(AuditAction action, Long accountId, String details)
+    + recordTransactionEvent(AuditAction action, Long accountId, Long relatedAccountId, LedgerTransaction transaction, BigDecimal amount, String currency, String details)
+    + findAccountAuditLogs(Long accountId, Pageable pageable)
+  }
+
+  class AuditLogController <<controller>> {
+    + findAuditLogs(Long accountId, Pageable pageable)
+  }
+
+  class AuditLogResponse <<dto>>
+  class AuditLogPageResponse <<dto>>
+}
+
+package "com.owo.banking_ledger.common" as common {
+  class BusinessException <<exception>> {
+    - BusinessErrorCode code
+    + getCode()
+    + invalidRequest(String message)
+  }
+
+  enum BusinessErrorCode {
+    ACCOUNT_NOT_FOUND
+    DUPLICATE_TRANSACTION
+    DATA_INTEGRITY_VIOLATION
+    INVALID_REQUEST
+  }
+
+  class ErrorResponse <<dto>> {
+    timestamp: Instant
+    code: BusinessErrorCode
+    message: String
+  }
+
+  class GlobalExceptionHandler <<advice>> {
+    + handleBusinessException(BusinessException exception)
+    + handleDataIntegrityViolation(DataIntegrityViolationException exception)
+    + handleValidation(MethodArgumentNotValidException exception)
+    + handleIllegalArgument(IllegalArgumentException exception)
+    + handleIllegalState(IllegalStateException exception)
+  }
+
+  class OpenApiConfig <<config>>
+}
+
+Account --> AccountStatus
+Account --> AccountKind
+Account --> AccountCategory
+AccountRepository ..> Account
+AccountService --> AccountRepository
+AccountService --> AuditLogService
+AccountService ..> CreateAccountRequest
+AccountService ..> AccountResponse
+AccountController --> AccountService
+AccountController ..> CreateAccountRequest
+AccountController ..> AccountResponse
+AccountNotFoundException --|> BusinessException
+
+LedgerTransaction --> TransactionType
+LedgerTransaction --> TransactionStatus
+LedgerEntry --> LedgerTransaction
+LedgerEntry --> Account
+LedgerEntry --> EntryType
+LedgerTransactionRepository ..> LedgerTransaction
+LedgerEntryRepository ..> LedgerEntry
+LedgerQueryService --> AccountRepository
+LedgerQueryService --> LedgerEntryRepository
+LedgerQueryController --> LedgerQueryService
+
+DepositController --> DepositService
+DepositService --> AccountRepository
+DepositService --> LedgerTransactionRepository
+DepositService --> LedgerEntryRepository
+DepositService --> AuditLogService
+DepositService ..> DepositRequest
+DepositService ..> DepositResponse
+DuplicateTransactionException --|> BusinessException
+
+WithdrawalController --> WithdrawalService
+WithdrawalService --> AccountRepository
+WithdrawalService --> LedgerTransactionRepository
+WithdrawalService --> LedgerEntryRepository
+WithdrawalService --> AuditLogService
+WithdrawalService ..> WithdrawalRequest
+WithdrawalService ..> WithdrawalResponse
+
+TransferController --> TransferService
+TransferService --> AccountRepository
+TransferService --> LedgerTransactionRepository
+TransferService --> LedgerEntryRepository
+TransferService --> AuditLogService
+TransferService ..> TransferRequest
+TransferService ..> TransferResponse
+
+AuditLog --> AuditAction
+AuditLogRepository ..> AuditLog
+AuditLogService --> AuditLogRepository
+AuditLogService --> AccountRepository
+AuditLogService ..> LedgerTransaction
+AuditLogController --> AuditLogService
+
+GlobalExceptionHandler ..> BusinessException
+GlobalExceptionHandler ..> BusinessErrorCode
+GlobalExceptionHandler ..> ErrorResponse
+BusinessException --> BusinessErrorCode
+@enduml
