@@ -22,6 +22,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Transfer money between customer accounts
 - Query paginated ledger entries for an account
 - Query paginated audit logs for an account
+- Reverse a posted transaction with a linked correcting transaction
 - Idempotent replay through unique `referenceId`
 - Pessimistic account locking for balance-changing operations
 - Global exception handling with structured JSON errors
@@ -63,6 +64,11 @@ is a materialized balance maintained for fast reads and concurrency-safe writes.
 Business failures roll back the whole transaction; the current application does
 not persist failed ledger transactions in normal validation-failure paths.
 
+Posted entries are append-only. The entity is mapped as immutable, the
+repository exposes no update or delete operation, and a database trigger rejects
+any `UPDATE` or `DELETE` on `ledger_entries`. A mistake is corrected by posting
+a reversal, never by editing history.
+
 ## Project Structure
 
 ```text
@@ -71,6 +77,7 @@ src/main/java/com/owo/banking_ledger
 ├── deposit # Deposit API and business logic
 ├── withdrawal # Withdrawal API and business logic
 ├── transfer # Transfer API and business logic
+├── reversal # Reversal API and business logic
 ├── audit # Audit log entity, service, and query API
 ├── ledger # Ledger transaction/entry entities and query API
 └── common # Global exception handling
@@ -79,7 +86,9 @@ src/main/resources/db/migration
 ├── V1__create_accounts.sql
 ├── V2__create_ledger.sql
 ├── V3__create_audit_logs.sql
-└── V4__add_transaction_request_hash.sql
+├── V4__add_transaction_request_hash.sql
+├── V5__ledger_entries_append_only.sql
+└── V6__add_transaction_reversal.sql
 ```
 
 ## UML
@@ -283,6 +292,50 @@ Response shape:
 }
 ```
 
+### Reverse a Transaction
+
+```bash
+curl -i -X POST http://localhost:8080/api/transactions/1/reversals \
+  -H "Content-Type: application/json" \
+  -d '{
+    "referenceId": "reversal-001",
+    "description": "Duplicate deposit"
+  }'
+```
+
+A reversal posts a new `REVERSAL` transaction whose entries mirror every entry
+of the original: each debit becomes a credit and each credit becomes a debit, on
+the same accounts and for the same amount. The reversal is linked to what it
+corrects through `reversal_of_id`, and the original moves to status `REVERSED`.
+Nothing already posted is modified.
+
+Response shape:
+
+```json
+{
+  "transactionId": 2,
+  "referenceId": "reversal-001",
+  "originalTransactionId": 1,
+  "originalReferenceId": "deposit-001",
+  "amount": 100.0,
+  "currency": "AUD",
+  "status": "COMPLETED"
+}
+```
+
+Rules:
+
+- Only `COMPLETED` transactions can be reversed.
+- A transaction can be reversed at most once, enforced by a partial unique index
+  on `reversal_of_id` and by locking the original row while reversing it.
+- A reversal cannot itself be reversed.
+- Reversals post like any other transaction, so they need active accounts and
+  sufficient balance. Reversing a deposit whose money has already been withdrawn
+  fails with `INVALID_REQUEST` rather than driving the account negative.
+- Reversal requests are idempotent on `referenceId` like every other posting.
+
+Rejected reversals return `409 Conflict` with the code `REVERSAL_NOT_ALLOWED`.
+
 ## Idempotency
 
 Every posting carries a `referenceId` that identifies the request. Alongside it
@@ -318,7 +371,9 @@ Errors are returned as structured JSON:
 Common codes:
 
 - `ACCOUNT_NOT_FOUND`
+- `TRANSACTION_NOT_FOUND`
 - `DUPLICATE_TRANSACTION`
+- `REVERSAL_NOT_ALLOWED`
 - `IDEMPOTENCY_PAYLOAD_MISMATCH`
 - `DATA_INTEGRITY_VIOLATION`
 - `INVALID_REQUEST`
@@ -351,6 +406,8 @@ The test suite includes:
 - Concurrency integration tests for simultaneous withdrawals and transfers
 - Ledger reconciliation tests that derive balances from entries
 - Idempotency tests for replay, payload mismatch, and concurrent duplicates
+- Append-only tests that attempt direct updates and deletes of posted entries
+- Reversal tests for mirrored postings, double reversal, and concurrency
 - Rollback tests for failed ledger-entry and audit-log writes
 
 Run all tests:
@@ -367,6 +424,8 @@ Run selected tests:
 ./mvnw -Dtest=LedgerReconciliationIntegrationTest test
 ./mvnw -Dtest=LedgerRollbackIntegrationTest test
 ./mvnw -Dtest=IdempotencyIntegrationTest test
+./mvnw -Dtest=LedgerAppendOnlyIntegrationTest test
+./mvnw -Dtest=ReversalIntegrationTest test
 ```
 
 ## Notes
@@ -374,3 +433,5 @@ Run selected tests:
 - `spring.jpa.hibernate.ddl-auto=validate` is enabled, so schema changes must be made through Flyway migrations.
 - `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
 - Balance-changing operations use pessimistic write locks to protect concurrent updates.
+- Ledger entries are never deleted, so integration tests do not clean up posted
+  data. Each test creates its own accounts and unique reference ids.
