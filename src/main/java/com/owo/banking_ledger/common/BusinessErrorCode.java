@@ -6,6 +6,7 @@ public enum BusinessErrorCode {
     ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND),
     DUPLICATE_TRANSACTION(HttpStatus.CONFLICT),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT),
+    IDEMPOTENCY_PAYLOAD_MISMATCH(HttpStatus.CONFLICT),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;

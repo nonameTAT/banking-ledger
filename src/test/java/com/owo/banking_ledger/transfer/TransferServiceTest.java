@@ -3,6 +3,7 @@ package com.owo.banking_ledger.transfer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,8 +27,8 @@ import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
-import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -50,6 +51,9 @@ class TransferServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private IdempotencyService idempotencyService;
+
     @InjectMocks
     private TransferService transferService;
 
@@ -67,8 +71,8 @@ class TransferServiceTest {
                 "transfer-001",
                 "Rent");
 
-        when(transactionRepository.existsByReferenceId("transfer-001"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("transfer-001"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(source));
         when(accountRepository.findByIdForUpdate(4L))
@@ -133,8 +137,8 @@ class TransferServiceTest {
                 "transfer-002",
                 null);
 
-        when(transactionRepository.existsByReferenceId("transfer-002"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("transfer-002"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(target));
         when(accountRepository.findByIdForUpdate(5L))
@@ -150,26 +154,61 @@ class TransferServiceTest {
     }
 
     @Test
-    void transferRejectsDuplicateReferenceId() {
+    void transferReplaysOriginalResponseForRepeatedRequest() {
+        Account source = customerAccount(2L, "Alice", "AUD");
+        Account target = customerAccount(4L, "Bob", "AUD");
         TransferRequest request = new TransferRequest(
                 2L,
                 4L,
                 new BigDecimal("35.0000"),
                 "AUD",
                 "transfer-001",
-                null);
+                "Rent");
 
-        when(transactionRepository.existsByReferenceId("transfer-001"))
-                .thenReturn(true);
+        LedgerTransaction original = new LedgerTransaction(
+                "transfer-001",
+                TransactionType.TRANSFER,
+                new BigDecimal("35.0000"),
+                "AUD",
+                "Rent",
+                "fingerprint");
+        ReflectionTestUtils.setField(original, "id", 12L);
+        original.complete();
 
-        DuplicateTransactionException exception = assertThrows(
-                DuplicateTransactionException.class,
-                () -> transferService.transfer(request));
+        when(idempotencyService.claim(eq("transfer-001"), any()))
+                .thenReturn(Optional.of(original));
+        when(entryRepository.findByTransactionId(12L))
+                .thenReturn(List.of(
+                        new LedgerEntry(
+                                original,
+                                source,
+                                EntryType.DEBIT,
+                                new BigDecimal("35.0000"),
+                                new BigDecimal("65.0000")),
+                        new LedgerEntry(
+                                original,
+                                target,
+                                EntryType.CREDIT,
+                                new BigDecimal("35.0000"),
+                                new BigDecimal("35.0000"))));
 
-        assertEquals("Transaction reference already exists: transfer-001",
-                exception.getMessage());
+        TransferResponse response = transferService.transfer(request);
+
+        assertEquals(12L, response.transactionId());
+        assertEquals("transfer-001", response.referenceId());
+        assertEquals(2L, response.sourceAccountId());
+        assertEquals(4L, response.targetAccountId());
+        assertEquals(TransactionStatus.COMPLETED, response.status());
+        assertEquals(0, new BigDecimal("65.0000")
+                .compareTo(response.sourceBalanceAfter()));
+        assertEquals(0, new BigDecimal("35.0000")
+                .compareTo(response.targetBalanceAfter()));
+
         verify(accountRepository, never()).findByIdForUpdate(any());
+        verify(transactionRepository, never()).save(any());
         verify(entryRepository, never()).saveAll(any());
+        verify(auditLogService, never()).recordTransactionEvent(
+                any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -188,7 +227,7 @@ class TransferServiceTest {
 
         assertEquals("Source and target accounts must be different",
                 exception.getMessage());
-        verify(transactionRepository, never()).existsByReferenceId(any());
+        verify(idempotencyService, never()).claim(any(), any());
     }
 
     @Test
@@ -205,8 +244,8 @@ class TransferServiceTest {
                 "transfer-003",
                 null);
 
-        when(transactionRepository.existsByReferenceId("transfer-003"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("transfer-003"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(source));
         when(accountRepository.findByIdForUpdate(4L))

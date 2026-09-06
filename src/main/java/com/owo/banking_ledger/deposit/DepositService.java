@@ -1,6 +1,7 @@
 package com.owo.banking_ledger.deposit;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,9 @@ import com.owo.banking_ledger.account.SystemAccounts;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
+import com.owo.banking_ledger.common.RequestFingerprint;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -28,24 +31,33 @@ public class DepositService {
     private final LedgerTransactionRepository transactionRepository;
     private final LedgerEntryRepository entryRepository;
     private final AuditLogService auditLogService;
+    private final IdempotencyService idempotencyService;
 
     public DepositService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
             LedgerEntryRepository entryRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            IdempotencyService idempotencyService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
         this.auditLogService = auditLogService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
     public DepositResponse deposit(
             Long accountId,
             DepositRequest request) {
-        if (transactionRepository.existsByReferenceId(request.referenceId())) {
-            throw new DuplicateTransactionException(request.referenceId());
+        String requestHash = fingerprint(accountId, request);
+
+        Optional<LedgerTransaction> replayed = idempotencyService.claim(
+                request.referenceId(),
+                requestHash);
+
+        if (replayed.isPresent()) {
+            return replayResponse(replayed.get(), accountId);
         }
 
         String systemAccountNumber = SystemAccounts.cashAccountNumber(
@@ -63,7 +75,7 @@ public class DepositService {
 
         validateDeposit(customerAccount, systemAccount, request);
 
-        LedgerTransaction transaction = createTransaction(request);
+        LedgerTransaction transaction = createTransaction(request, requestHash);
 
         systemAccount.debit(request.amount());
         customerAccount.credit(request.amount());
@@ -105,7 +117,42 @@ public class DepositService {
                 customerAccount.getBalance());
     }
 
-    private LedgerTransaction createTransaction(DepositRequest request) {
+    private static String fingerprint(Long accountId, DepositRequest request) {
+        return RequestFingerprint.of(
+                TransactionType.DEPOSIT.name(),
+                String.valueOf(accountId),
+                RequestFingerprint.normalize(request.amount()),
+                request.currency(),
+                request.description());
+    }
+
+    private DepositResponse replayResponse(
+            LedgerTransaction transaction,
+            Long accountId) {
+        LedgerEntry entry = entryRepository
+                .findByTransactionId(transaction.getId())
+                .stream()
+                .filter(candidate -> candidate.getAccount()
+                        .getId()
+                        .equals(accountId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Replayed transaction has no entry for account "
+                                + accountId));
+
+        return new DepositResponse(
+                transaction.getId(),
+                transaction.getReferenceId(),
+                accountId,
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getStatus(),
+                entry.getBalanceAfter());
+    }
+
+    private LedgerTransaction createTransaction(
+            DepositRequest request,
+            String requestHash) {
         try {
             return transactionRepository.saveAndFlush(
                     new LedgerTransaction(
@@ -113,7 +160,8 @@ public class DepositService {
                             TransactionType.DEPOSIT,
                             request.amount(),
                             request.currency(),
-                            request.description()));
+                            request.description(),
+                            requestHash));
         } catch (DataIntegrityViolationException exception) {
             throw new DuplicateTransactionException(request.referenceId());
         }
