@@ -3,6 +3,8 @@ package com.owo.banking_ledger.ledger;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import org.hibernate.annotations.Immutable;
+
 import com.owo.banking_ledger.account.Account;
 
 import jakarta.persistence.Column;
@@ -18,8 +20,15 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
+/**
+ * A posted ledger entry. Entries are append-only: once written they are never
+ * updated or deleted, and a mistake is corrected by posting a reversal
+ * transaction. A database trigger enforces the same rule outside the
+ * application.
+ */
 @Getter
 @Entity
+@Immutable
 @Table(name = "ledger_entries")
 public class LedgerEntry {
 
