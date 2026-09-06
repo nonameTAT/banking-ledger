@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -21,6 +23,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
+import com.owo.banking_ledger.common.BusinessErrorCode;
+import com.owo.banking_ledger.common.BusinessException;
 
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
@@ -38,6 +42,10 @@ class AccountServiceTest {
     void createSavesNewCustomerAccount() {
         CreateAccountRequest request = new CreateAccountRequest("Alice", "AUD");
 
+        when(accountRepository.existsByAccountNumberAndAccountKind(
+                "SYSTEM-CASH-AUD",
+                AccountKind.SYSTEM))
+                .thenReturn(true);
         when(accountRepository.save(any(Account.class)))
                 .thenAnswer(invocation -> {
                     Account account = invocation.getArgument(0);
@@ -65,6 +73,25 @@ class AccountServiceTest {
                 AuditAction.ACCOUNT_CREATED,
                 1L,
                 "Account created");
+    }
+
+    @Test
+    void createThrowsWhenCurrencyHasNoSystemCashAccount() {
+        CreateAccountRequest request = new CreateAccountRequest("Alice", "USD");
+
+        when(accountRepository.existsByAccountNumberAndAccountKind(
+                "SYSTEM-CASH-USD",
+                AccountKind.SYSTEM))
+                .thenReturn(false);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> accountService.create(request));
+
+        assertEquals(BusinessErrorCode.INVALID_REQUEST, exception.getCode());
+        assertEquals("Currency is not supported: USD", exception.getMessage());
+        verify(accountRepository, never()).save(any(Account.class));
+        verifyNoInteractions(auditLogService);
     }
 
     @Test
@@ -133,6 +160,41 @@ class AccountServiceTest {
     }
 
     @Test
+    void freezeThrowsForSystemAccount() {
+        Account systemAccount = systemCashAccount();
+
+        when(accountRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(systemAccount));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> accountService.freeze(1L));
+
+        assertEquals(BusinessErrorCode.INVALID_REQUEST, exception.getCode());
+        assertEquals("Only customer accounts can be frozen", exception.getMessage());
+        assertEquals(AccountStatus.ACTIVE, systemAccount.getStatus());
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void unfreezeThrowsForSystemAccount() {
+        Account systemAccount = systemCashAccount();
+        ReflectionTestUtils.setField(systemAccount, "status", AccountStatus.FROZEN);
+
+        when(accountRepository.findByIdForUpdate(1L))
+                .thenReturn(Optional.of(systemAccount));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> accountService.unfreeze(1L));
+
+        assertEquals(BusinessErrorCode.INVALID_REQUEST, exception.getCode());
+        assertEquals("Only customer accounts can be unfrozen", exception.getMessage());
+        assertEquals(AccountStatus.FROZEN, systemAccount.getStatus());
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
     void freezeThrowsWhenAccountDoesNotExist() {
         when(accountRepository.findByIdForUpdate(99L))
                 .thenReturn(Optional.empty());
@@ -142,5 +204,16 @@ class AccountServiceTest {
                 () -> accountService.freeze(99L));
 
         assertEquals("Account not found: 99", exception.getMessage());
+    }
+
+    private static Account systemCashAccount() {
+        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD");
+        ReflectionTestUtils.setField(account, "id", 1L);
+        ReflectionTestUtils.setField(account, "accountKind", AccountKind.SYSTEM);
+        ReflectionTestUtils.setField(
+                account,
+                "accountCategory",
+                AccountCategory.ASSET);
+        return account;
     }
 }
