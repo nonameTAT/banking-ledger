@@ -3,6 +3,7 @@ package com.owo.banking_ledger.deposit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,6 +28,8 @@ import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyConflictException;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -49,6 +52,9 @@ class DepositServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private IdempotencyService idempotencyService;
+
     @InjectMocks
     private DepositService depositService;
 
@@ -62,8 +68,8 @@ class DepositServiceTest {
                 "deposit-001",
                 "Initial deposit");
 
-        when(transactionRepository.existsByReferenceId("deposit-001"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("deposit-001"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
                 .thenReturn(Optional.of(systemAccount));
         when(accountRepository.findByIdForUpdate(2L))
@@ -114,21 +120,70 @@ class DepositServiceTest {
     }
 
     @Test
-    void depositRejectsDuplicateReferenceId() {
+    void depositReplaysOriginalResponseForRepeatedRequest() {
+        Account customerAccount = customerAccount(2L, "Alice", "AUD");
         DepositRequest request = new DepositRequest(
                 new BigDecimal("100.0000"),
                 "AUD",
                 "deposit-001",
+                "Initial deposit");
+
+        LedgerTransaction original = new LedgerTransaction(
+                "deposit-001",
+                TransactionType.DEPOSIT,
+                new BigDecimal("100.0000"),
+                "AUD",
+                "Initial deposit",
+                "fingerprint");
+        ReflectionTestUtils.setField(original, "id", 10L);
+        original.complete();
+
+        when(idempotencyService.claim(eq("deposit-001"), any()))
+                .thenReturn(Optional.of(original));
+        when(entryRepository.findByTransactionId(10L))
+                .thenReturn(List.of(new LedgerEntry(
+                        original,
+                        customerAccount,
+                        EntryType.CREDIT,
+                        new BigDecimal("100.0000"),
+                        new BigDecimal("100.0000"))));
+
+        DepositResponse response = depositService.deposit(2L, request);
+
+        assertEquals(10L, response.transactionId());
+        assertEquals("deposit-001", response.referenceId());
+        assertEquals(2L, response.accountId());
+        assertEquals(TransactionStatus.COMPLETED, response.status());
+        assertEquals(0, new BigDecimal("100.0000")
+                .compareTo(response.balanceAfter()));
+
+        // A replay reads the original posting instead of posting again.
+        verify(accountRepository, never()).findByIdForUpdate(any());
+        verify(accountRepository, never()).findByAccountNumberForUpdate(any());
+        verify(transactionRepository, never()).saveAndFlush(any());
+        verify(entryRepository, never()).saveAll(any());
+        verify(auditLogService, never()).recordTransactionEvent(
+                any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void depositRejectsReferenceIdReusedWithADifferentPayload() {
+        DepositRequest request = new DepositRequest(
+                new BigDecimal("999.0000"),
+                "AUD",
+                "deposit-001",
                 null);
 
-        when(transactionRepository.existsByReferenceId("deposit-001"))
-                .thenReturn(true);
+        when(idempotencyService.claim(eq("deposit-001"), any()))
+                .thenThrow(new IdempotencyConflictException("deposit-001"));
 
-        DuplicateTransactionException exception = assertThrows(
-                DuplicateTransactionException.class,
+        IdempotencyConflictException exception = assertThrows(
+                IdempotencyConflictException.class,
                 () -> depositService.deposit(2L, request));
 
-        assertEquals("Transaction reference already exists: deposit-001",
+        assertEquals(
+                "Transaction reference was already used with a different "
+                        + "request payload: deposit-001",
                 exception.getMessage());
         verify(accountRepository, never()).findByAccountNumberForUpdate(any());
         verify(entryRepository, never()).saveAll(any());
@@ -145,8 +200,8 @@ class DepositServiceTest {
                 "deposit-002",
                 null);
 
-        when(transactionRepository.existsByReferenceId("deposit-002"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("deposit-002"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
                 .thenReturn(Optional.of(systemAccount));
         when(accountRepository.findByIdForUpdate(2L))

@@ -22,7 +22,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Transfer money between customer accounts
 - Query paginated ledger entries for an account
 - Query paginated audit logs for an account
-- Idempotency check through unique `referenceId`
+- Idempotent replay through unique `referenceId`
 - Pessimistic account locking for balance-changing operations
 - Global exception handling with structured JSON errors
 - Integration and concurrency tests
@@ -78,7 +78,8 @@ src/main/java/com/owo/banking_ledger
 src/main/resources/db/migration
 ├── V1__create_accounts.sql
 ├── V2__create_ledger.sql
-└── V3__create_audit_logs.sql
+├── V3__create_audit_logs.sql
+└── V4__add_transaction_request_hash.sql
 ```
 
 ## UML
@@ -282,6 +283,26 @@ Response shape:
 }
 ```
 
+## Idempotency
+
+Every posting carries a `referenceId` that identifies the request. Alongside it
+the ledger stores a SHA-256 fingerprint of the payload that created the
+transaction, so a retry can be told apart from a reused reference id.
+
+- Retrying with the same `referenceId` and the same payload returns the original
+  result — the same transaction id and the balance recorded at the time of the
+  original posting, not the current balance. Nothing is posted twice.
+- Reusing a `referenceId` with a different payload returns `409 Conflict` with
+  the code `IDEMPOTENCY_PAYLOAD_MISMATCH`.
+- Concurrent duplicates queue on a transaction-scoped advisory lock keyed by the
+  reference id. The first request posts, the rest replay its result.
+
+The fingerprint covers the transaction type, the account ids, the amount, the
+currency, and the description. Amounts are compared by value, so `100.00` and
+`100.0000` are the same payload. A transaction written before fingerprinting
+existed has no stored hash and cannot be verified, so retrying it returns
+`409 Conflict` with the code `DUPLICATE_TRANSACTION`.
+
 ## Error Responses
 
 Errors are returned as structured JSON:
@@ -298,12 +319,13 @@ Common codes:
 
 - `ACCOUNT_NOT_FOUND`
 - `DUPLICATE_TRANSACTION`
+- `IDEMPOTENCY_PAYLOAD_MISMATCH`
 - `DATA_INTEGRITY_VIOLATION`
 - `INVALID_REQUEST`
 
 Examples:
 
-- Duplicate `referenceId` returns `409 Conflict`.
+- Reusing a `referenceId` with a different payload returns `409 Conflict`.
 - Missing account returns `404 Not Found`.
 - Invalid amount or self-transfer returns `400 Bad Request`.
 
@@ -315,6 +337,7 @@ Examples:
 - `amount` must be at least `0.0001`.
 - `amount` supports up to 15 integer digits and 4 fractional digits.
 - `referenceId` is required, unique, and has a maximum length of 64.
+- Repeating a `referenceId` with an identical payload replays the result.
 - Transfer source and target accounts must be different.
 - Deposit, withdrawal, and transfer currencies must match account currency.
 
@@ -327,6 +350,7 @@ The test suite includes:
 - Full banking flow integration test
 - Concurrency integration tests for simultaneous withdrawals and transfers
 - Ledger reconciliation tests that derive balances from entries
+- Idempotency tests for replay, payload mismatch, and concurrent duplicates
 - Rollback tests for failed ledger-entry and audit-log writes
 
 Run all tests:
@@ -342,6 +366,7 @@ Run selected tests:
 ./mvnw -Dtest=BankingConcurrencyIntegrationTest test
 ./mvnw -Dtest=LedgerReconciliationIntegrationTest test
 ./mvnw -Dtest=LedgerRollbackIntegrationTest test
+./mvnw -Dtest=IdempotencyIntegrationTest test
 ```
 
 ## Notes

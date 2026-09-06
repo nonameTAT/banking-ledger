@@ -1,6 +1,7 @@
 package com.owo.banking_ledger.withdrawal;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,8 +14,9 @@ import com.owo.banking_ledger.account.SystemAccounts;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
-import com.owo.banking_ledger.deposit.DuplicateTransactionException;
+import com.owo.banking_ledger.common.RequestFingerprint;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -28,24 +30,33 @@ public class WithdrawalService {
     private final LedgerTransactionRepository transactionRepository;
     private final LedgerEntryRepository entryRepository;
     private final AuditLogService auditLogService;
+    private final IdempotencyService idempotencyService;
 
     public WithdrawalService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
             LedgerEntryRepository entryRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            IdempotencyService idempotencyService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
         this.auditLogService = auditLogService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
     public WithdrawalResponse withdraw(
             Long accountId,
             WithdrawalRequest request) {
-        if (transactionRepository.existsByReferenceId(request.referenceId())) {
-            throw new DuplicateTransactionException(request.referenceId());
+        String requestHash = fingerprint(accountId, request);
+
+        Optional<LedgerTransaction> replayed = idempotencyService.claim(
+                request.referenceId(),
+                requestHash);
+
+        if (replayed.isPresent()) {
+            return replayResponse(replayed.get(), accountId);
         }
 
         String systemAccountNumber = SystemAccounts.cashAccountNumber(
@@ -69,7 +80,8 @@ public class WithdrawalService {
                         TransactionType.WITHDRAWAL,
                         request.amount(),
                         request.currency(),
-                        request.description()));
+                        request.description(),
+                        requestHash));
 
         customerAccount.debit(request.amount());
         systemAccount.credit(request.amount());
@@ -109,6 +121,41 @@ public class WithdrawalService {
                 transaction.getCurrency(),
                 transaction.getStatus(),
                 customerAccount.getBalance());
+    }
+
+    private static String fingerprint(
+            Long accountId,
+            WithdrawalRequest request) {
+        return RequestFingerprint.of(
+                TransactionType.WITHDRAWAL.name(),
+                String.valueOf(accountId),
+                RequestFingerprint.normalize(request.amount()),
+                request.currency(),
+                request.description());
+    }
+
+    private WithdrawalResponse replayResponse(
+            LedgerTransaction transaction,
+            Long accountId) {
+        LedgerEntry entry = entryRepository
+                .findByTransactionId(transaction.getId())
+                .stream()
+                .filter(candidate -> candidate.getAccount()
+                        .getId()
+                        .equals(accountId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Replayed transaction has no entry for account "
+                                + accountId));
+
+        return new WithdrawalResponse(
+                transaction.getId(),
+                transaction.getReferenceId(),
+                accountId,
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getStatus(),
+                entry.getBalanceAfter());
     }
 
     private void validateWithdrawal(

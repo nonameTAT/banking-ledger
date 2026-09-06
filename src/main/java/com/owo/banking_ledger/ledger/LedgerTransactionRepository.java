@@ -7,7 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface LedgerTransactionRepository
         extends JpaRepository<LedgerTransaction, Long> {
 
-    boolean existsByReferenceId(String referenceId);
-
     Optional<LedgerTransaction> findByReferenceId(String referenceId);
 }
