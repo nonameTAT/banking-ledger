@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.jayway.jsonpath.JsonPath;
 import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.account.AccountStatus;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogRepository;
 import com.owo.banking_ledger.ledger.EntryType;
@@ -152,6 +153,45 @@ class BankingFlowIntegrationTest {
                 assertAuditLogActions(targetAccountId, List.of(
                                 AuditAction.ACCOUNT_CREATED,
                                 AuditAction.TRANSFER_COMPLETED));
+        }
+
+        @Test
+        void createAccountRejectsCurrencyWithoutSystemCashAccount() throws Exception {
+                mockMvc.perform(post("/api/accounts")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                                {
+                                                  "ownerName": "Alice",
+                                                  "currency": "USD"
+                                                }
+                                                """))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                                .andExpect(jsonPath("$.message")
+                                                .value("Currency is not supported: USD"));
+        }
+
+        @Test
+        void freezeAndUnfreezeRejectSystemCashAccount() throws Exception {
+                Account systemAccount = accountRepository
+                                .findByAccountNumber("SYSTEM-CASH-AUD")
+                                .orElseThrow();
+
+                mockMvc.perform(post("/api/accounts/{accountId}/freeze",
+                                systemAccount.getId()))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                                .andExpect(jsonPath("$.message")
+                                                .value("Only customer accounts can be frozen"));
+
+                mockMvc.perform(post("/api/accounts/{accountId}/unfreeze",
+                                systemAccount.getId()))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                                .andExpect(jsonPath("$.message")
+                                                .value("Only customer accounts can be unfrozen"));
+
+                assertEquals(AccountStatus.ACTIVE, systemAccount.getStatus());
         }
 
         private Long createAccount(String ownerName) throws Exception {

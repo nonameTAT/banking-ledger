@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
+import com.owo.banking_ledger.common.BusinessException;
 
 @Service
 public class AccountService {
@@ -23,6 +24,8 @@ public class AccountService {
 
     @Transactional
     public AccountResponse create(CreateAccountRequest request) {
+        validateSupportedCurrency(request.currency());
+
         String accountNumber = generateAccountNumber();
 
         Account account = new Account(
@@ -52,6 +55,8 @@ public class AccountService {
         Account account = accountRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
+        validateCustomerAccount(account, "frozen");
+
         account.freeze();
         auditLogService.recordAccountEvent(
                 AuditAction.ACCOUNT_FROZEN,
@@ -66,6 +71,8 @@ public class AccountService {
         Account account = accountRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
+        validateCustomerAccount(account, "unfrozen");
+
         account.unfreeze();
         auditLogService.recordAccountEvent(
                 AuditAction.ACCOUNT_UNFROZEN,
@@ -73,6 +80,24 @@ public class AccountService {
                 "Account unfrozen");
 
         return AccountResponse.from(account);
+    }
+
+    private void validateSupportedCurrency(String currency) {
+        boolean supported = accountRepository.existsByAccountNumberAndAccountKind(
+                SystemAccounts.cashAccountNumber(currency),
+                AccountKind.SYSTEM);
+
+        if (!supported) {
+            throw BusinessException.invalidRequest(
+                    "Currency is not supported: " + currency);
+        }
+    }
+
+    private void validateCustomerAccount(Account account, String operation) {
+        if (account.getAccountKind() != AccountKind.CUSTOMER) {
+            throw BusinessException.invalidRequest(
+                    "Only customer accounts can be " + operation);
+        }
     }
 
     private String generateAccountNumber() {

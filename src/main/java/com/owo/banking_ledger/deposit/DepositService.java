@@ -10,6 +10,7 @@ import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountKind;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.account.SystemAccounts;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
@@ -47,7 +48,8 @@ public class DepositService {
             throw new DuplicateTransactionException(request.referenceId());
         }
 
-        String systemAccountNumber = "SYSTEM-CASH-" + request.currency();
+        String systemAccountNumber = SystemAccounts.cashAccountNumber(
+                request.currency());
 
         Account systemAccount = accountRepository
                 .findByAccountNumberForUpdate(systemAccountNumber)

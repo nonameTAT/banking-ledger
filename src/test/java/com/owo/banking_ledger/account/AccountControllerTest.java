@@ -19,6 +19,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.owo.banking_ledger.common.BusinessException;
+
 @WebMvcTest(AccountController.class)
 class AccountControllerTest {
 
@@ -78,6 +80,26 @@ class AccountControllerTest {
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createReturnsBadRequestForUnsupportedCurrency() throws Exception {
+        when(accountService.create(any(CreateAccountRequest.class)))
+                .thenThrow(BusinessException.invalidRequest(
+                        "Currency is not supported: USD"));
+
+        mockMvc.perform(post("/api/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerName": "Alice",
+                                  "currency": "USD"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message")
+                        .value("Currency is not supported: USD"));
     }
 
     @Test
@@ -150,5 +172,31 @@ class AccountControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void freezeReturnsBadRequestForSystemAccount() throws Exception {
+        when(accountService.freeze(1L))
+                .thenThrow(BusinessException.invalidRequest(
+                        "Only customer accounts can be frozen"));
+
+        mockMvc.perform(post("/api/accounts/1/freeze"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message")
+                        .value("Only customer accounts can be frozen"));
+    }
+
+    @Test
+    void unfreezeReturnsBadRequestForSystemAccount() throws Exception {
+        when(accountService.unfreeze(1L))
+                .thenThrow(BusinessException.invalidRequest(
+                        "Only customer accounts can be unfrozen"));
+
+        mockMvc.perform(post("/api/accounts/1/unfreeze"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message")
+                        .value("Only customer accounts can be unfrozen"));
     }
 }
