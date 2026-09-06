@@ -9,9 +9,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Getter;
 
@@ -50,6 +53,10 @@ public class LedgerTransaction {
     @Column(name = "request_hash", length = 64)
     private String requestHash;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reversal_of_id")
+    private LedgerTransaction reversalOf;
+
     protected LedgerTransaction() {
     }
 
@@ -68,6 +75,42 @@ public class LedgerTransaction {
         this.description = description;
         this.createdAt = Instant.now();
         this.requestHash = requestHash;
+    }
+
+    /**
+     * Builds the transaction that reverses {@code original}, carrying the same
+     * amount and currency and linked back to what it corrects.
+     */
+    public static LedgerTransaction reversing(
+            LedgerTransaction original,
+            String referenceId,
+            String description,
+            String requestHash) {
+        LedgerTransaction reversal = new LedgerTransaction(
+                referenceId,
+                TransactionType.REVERSAL,
+                original.getAmount(),
+                original.getCurrency(),
+                description,
+                requestHash);
+
+        reversal.reversalOf = original;
+
+        return reversal;
+    }
+
+    public boolean isReversal() {
+        return reversalOf != null;
+    }
+
+    public void markReversed() {
+        if (status != TransactionStatus.COMPLETED) {
+            throw new ReversalNotAllowedException(
+                    "Only completed transactions can be reversed: "
+                            + referenceId);
+        }
+
+        this.status = TransactionStatus.REVERSED;
     }
 
     public void complete() {

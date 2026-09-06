@@ -14,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,26 +67,8 @@ class BankingConcurrencyIntegrationTest {
     private final List<Long> createdAccountIds = Collections.synchronizedList(new ArrayList<>());
     private final List<String> referenceIds = Collections.synchronizedList(new ArrayList<>());
 
-    @AfterEach
-    void cleanUp() {
-        if (!createdAccountIds.isEmpty()) {
-            auditLogRepository.deleteAll(
-                    auditLogRepository.findByAccountIdInOrRelatedAccountIdIn(
-                            createdAccountIds,
-                            createdAccountIds));
-        }
-
-        List<LedgerTransaction> transactions = referenceIds.stream()
-                .flatMap(referenceId -> transactionRepository
-                        .findByReferenceId(referenceId)
-                        .stream())
-                .toList();
-
-        transactions.forEach(transaction -> entryRepository.deleteAll(
-                entryRepository.findByTransactionId(transaction.getId())));
-        transactionRepository.deleteAll(transactions);
-        accountRepository.deleteAllById(createdAccountIds);
-    }
+    // Ledger entries are append-only, so posted test data is never deleted.
+    // Each test creates its own accounts and unique reference ids instead.
 
     @Test
     void concurrentWithdrawalsSerializeBalanceUpdates() throws Exception {
