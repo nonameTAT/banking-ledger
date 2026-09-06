@@ -326,6 +326,8 @@ The test suite includes:
 - Web MVC tests for account, deposit, withdrawal, transfer, ledger query, and audit log APIs
 - Full banking flow integration test
 - Concurrency integration tests for simultaneous withdrawals and transfers
+- Ledger reconciliation tests that derive balances from entries
+- Rollback tests for failed ledger-entry and audit-log writes
 
 Run all tests:
 
@@ -338,6 +340,8 @@ Run selected tests:
 ```bash
 ./mvnw -Dtest=BankingFlowIntegrationTest test
 ./mvnw -Dtest=BankingConcurrencyIntegrationTest test
+./mvnw -Dtest=LedgerReconciliationIntegrationTest test
+./mvnw -Dtest=LedgerRollbackIntegrationTest test
 ```
 
 ## Notes
