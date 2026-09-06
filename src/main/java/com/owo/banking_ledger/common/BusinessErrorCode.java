@@ -4,9 +4,11 @@ import org.springframework.http.HttpStatus;
 
 public enum BusinessErrorCode {
     ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    TRANSACTION_NOT_FOUND(HttpStatus.NOT_FOUND),
     DUPLICATE_TRANSACTION(HttpStatus.CONFLICT),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT),
     IDEMPOTENCY_PAYLOAD_MISMATCH(HttpStatus.CONFLICT),
+    REVERSAL_NOT_ALLOWED(HttpStatus.CONFLICT),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST);
 
     private final HttpStatus status;
