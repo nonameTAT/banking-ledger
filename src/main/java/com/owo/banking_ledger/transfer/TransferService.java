@@ -1,6 +1,8 @@
 package com.owo.banking_ledger.transfer;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,8 +14,9 @@ import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
-import com.owo.banking_ledger.deposit.DuplicateTransactionException;
+import com.owo.banking_ledger.common.RequestFingerprint;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -27,16 +30,19 @@ public class TransferService {
     private final LedgerTransactionRepository transactionRepository;
     private final LedgerEntryRepository entryRepository;
     private final AuditLogService auditLogService;
+    private final IdempotencyService idempotencyService;
 
     public TransferService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
             LedgerEntryRepository entryRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            IdempotencyService idempotencyService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
         this.auditLogService = auditLogService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
@@ -46,8 +52,14 @@ public class TransferService {
                     "Source and target accounts must be different");
         }
 
-        if (transactionRepository.existsByReferenceId(request.referenceId())) {
-            throw new DuplicateTransactionException(request.referenceId());
+        String requestHash = fingerprint(request);
+
+        Optional<LedgerTransaction> replayed = idempotencyService.claim(
+                request.referenceId(),
+                requestHash);
+
+        if (replayed.isPresent()) {
+            return replayResponse(replayed.get(), request);
         }
 
         long firstId = Math.min(
@@ -82,7 +94,8 @@ public class TransferService {
                         TransactionType.TRANSFER,
                         request.amount(),
                         request.currency(),
-                        request.description()));
+                        request.description(),
+                        requestHash));
 
         source.debit(request.amount());
         target.credit(request.amount());
@@ -123,6 +136,46 @@ public class TransferService {
                 transaction.getStatus(),
                 source.getBalance(),
                 target.getBalance());
+    }
+
+    private static String fingerprint(TransferRequest request) {
+        return RequestFingerprint.of(
+                TransactionType.TRANSFER.name(),
+                String.valueOf(request.sourceAccountId()),
+                String.valueOf(request.targetAccountId()),
+                RequestFingerprint.normalize(request.amount()),
+                request.currency(),
+                request.description());
+    }
+
+    private TransferResponse replayResponse(
+            LedgerTransaction transaction,
+            TransferRequest request) {
+        List<LedgerEntry> entries = entryRepository.findByTransactionId(
+                transaction.getId());
+
+        return new TransferResponse(
+                transaction.getId(),
+                transaction.getReferenceId(),
+                request.sourceAccountId(),
+                request.targetAccountId(),
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getStatus(),
+                balanceAfter(entries, request.sourceAccountId()),
+                balanceAfter(entries, request.targetAccountId()));
+    }
+
+    private static BigDecimal balanceAfter(
+            List<LedgerEntry> entries,
+            Long accountId) {
+        return entries.stream()
+                .filter(entry -> entry.getAccount().getId().equals(accountId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Replayed transaction has no entry for account "
+                                + accountId))
+                .getBalanceAfter();
     }
 
     private void validateTransfer(

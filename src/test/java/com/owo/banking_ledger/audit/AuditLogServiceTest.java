@@ -63,7 +63,8 @@ class AuditLogServiceTest {
                 TransactionType.TRANSFER,
                 new BigDecimal("35.0000"),
                 "AUD",
-                "Rent");
+                "Rent",
+                "fingerprint");
         ReflectionTestUtils.setField(transaction, "id", 30L);
 
         auditLogService.recordTransactionEvent(

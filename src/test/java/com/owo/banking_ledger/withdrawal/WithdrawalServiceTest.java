@@ -3,6 +3,7 @@ package com.owo.banking_ledger.withdrawal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,8 +27,8 @@ import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
-import com.owo.banking_ledger.deposit.DuplicateTransactionException;
 import com.owo.banking_ledger.ledger.EntryType;
+import com.owo.banking_ledger.ledger.IdempotencyService;
 import com.owo.banking_ledger.ledger.LedgerEntry;
 import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
@@ -50,6 +51,9 @@ class WithdrawalServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private IdempotencyService idempotencyService;
+
     @InjectMocks
     private WithdrawalService withdrawalService;
 
@@ -64,8 +68,8 @@ class WithdrawalServiceTest {
                 "withdrawal-001",
                 "ATM withdrawal");
 
-        when(transactionRepository.existsByReferenceId("withdrawal-001"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("withdrawal-001"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
                 .thenReturn(Optional.of(systemAccount));
         when(accountRepository.findByIdForUpdate(2L))
@@ -118,24 +122,49 @@ class WithdrawalServiceTest {
     }
 
     @Test
-    void withdrawRejectsDuplicateReferenceId() {
+    void withdrawReplaysOriginalResponseForRepeatedRequest() {
+        Account customerAccount = customerAccount(2L, "Alice", "AUD");
         WithdrawalRequest request = new WithdrawalRequest(
                 new BigDecimal("40.0000"),
                 "AUD",
                 "withdrawal-001",
-                null);
+                "ATM withdrawal");
 
-        when(transactionRepository.existsByReferenceId("withdrawal-001"))
-                .thenReturn(true);
+        LedgerTransaction original = new LedgerTransaction(
+                "withdrawal-001",
+                TransactionType.WITHDRAWAL,
+                new BigDecimal("40.0000"),
+                "AUD",
+                "ATM withdrawal",
+                "fingerprint");
+        ReflectionTestUtils.setField(original, "id", 11L);
+        original.complete();
 
-        DuplicateTransactionException exception = assertThrows(
-                DuplicateTransactionException.class,
-                () -> withdrawalService.withdraw(2L, request));
+        when(idempotencyService.claim(eq("withdrawal-001"), any()))
+                .thenReturn(Optional.of(original));
+        when(entryRepository.findByTransactionId(11L))
+                .thenReturn(List.of(new LedgerEntry(
+                        original,
+                        customerAccount,
+                        EntryType.DEBIT,
+                        new BigDecimal("40.0000"),
+                        new BigDecimal("60.0000"))));
 
-        assertEquals("Transaction reference already exists: withdrawal-001",
-                exception.getMessage());
+        WithdrawalResponse response = withdrawalService.withdraw(2L, request);
+
+        assertEquals(11L, response.transactionId());
+        assertEquals("withdrawal-001", response.referenceId());
+        assertEquals(2L, response.accountId());
+        assertEquals(TransactionStatus.COMPLETED, response.status());
+        assertEquals(0, new BigDecimal("60.0000")
+                .compareTo(response.balanceAfter()));
+
+        verify(accountRepository, never()).findByIdForUpdate(any());
         verify(accountRepository, never()).findByAccountNumberForUpdate(any());
+        verify(transactionRepository, never()).save(any());
         verify(entryRepository, never()).saveAll(any());
+        verify(auditLogService, never()).recordTransactionEvent(
+                any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -150,8 +179,8 @@ class WithdrawalServiceTest {
                 "withdrawal-002",
                 null);
 
-        when(transactionRepository.existsByReferenceId("withdrawal-002"))
-                .thenReturn(false);
+        when(idempotencyService.claim(eq("withdrawal-002"), any()))
+                .thenReturn(Optional.empty());
         when(accountRepository.findByAccountNumberForUpdate("SYSTEM-CASH-AUD"))
                 .thenReturn(Optional.of(systemAccount));
         when(accountRepository.findByIdForUpdate(2L))

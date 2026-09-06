@@ -47,6 +47,9 @@ public class LedgerTransaction {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "request_hash", length = 64)
+    private String requestHash;
+
     protected LedgerTransaction() {
     }
 
@@ -55,7 +58,8 @@ public class LedgerTransaction {
             TransactionType transactionType,
             BigDecimal amount,
             String currency,
-            String description) {
+            String description,
+            String requestHash) {
         this.referenceId = referenceId;
         this.transactionType = transactionType;
         this.status = TransactionStatus.PENDING;
@@ -63,6 +67,7 @@ public class LedgerTransaction {
         this.currency = currency;
         this.description = description;
         this.createdAt = Instant.now();
+        this.requestHash = requestHash;
     }
 
     public void complete() {
