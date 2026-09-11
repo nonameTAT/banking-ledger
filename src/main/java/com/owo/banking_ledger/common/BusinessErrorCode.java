@@ -11,7 +11,8 @@ public enum BusinessErrorCode {
     REVERSAL_NOT_ALLOWED(HttpStatus.CONFLICT),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST),
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED),
-    ACCESS_DENIED(HttpStatus.FORBIDDEN);
+    ACCESS_DENIED(HttpStatus.FORBIDDEN),
+    DATABASE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE);
 
     private final HttpStatus status;
 

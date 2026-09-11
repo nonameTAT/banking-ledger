@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import com.owo.banking_ledger.common.BusinessErrorCode;
 import com.owo.banking_ledger.common.ErrorResponse;
+import com.owo.banking_ledger.observability.CurrentTrace;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -30,9 +31,13 @@ public class ApiSecurityErrorWriter
         implements AuthenticationEntryPoint, AccessDeniedHandler {
 
     private final ObjectMapper objectMapper;
+    private final CurrentTrace currentTrace;
 
-    public ApiSecurityErrorWriter(ObjectMapper objectMapper) {
+    public ApiSecurityErrorWriter(
+            ObjectMapper objectMapper,
+            CurrentTrace currentTrace) {
         this.objectMapper = objectMapper;
+        this.currentTrace = currentTrace;
     }
 
     @Override
@@ -66,6 +71,6 @@ public class ApiSecurityErrorWriter
 
         objectMapper.writeValue(
                 response.getWriter(),
-                ErrorResponse.of(code, message));
+                ErrorResponse.of(code, message, currentTrace.id()));
     }
 }
