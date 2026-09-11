@@ -50,6 +50,8 @@ import com.owo.banking_ledger.transfer.TransferResponse;
 import com.owo.banking_ledger.transfer.TransferService;
 import com.owo.banking_ledger.withdrawal.WithdrawalRequest;
 import com.owo.banking_ledger.withdrawal.WithdrawalService;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
+import org.springframework.security.test.context.support.WithMockUser;
 
 /**
  * A reversal corrects a posted transaction by adding new mirrored entries. The
@@ -57,6 +59,7 @@ import com.owo.banking_ledger.withdrawal.WithdrawalService;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")
 class ReversalIntegrationTest {
 
     private static final int THREADS = 4;
@@ -381,7 +384,10 @@ class ReversalIntegrationTest {
     private static List<Object> runConcurrently(
             int threadCount,
             IndexedTask task) throws Exception {
-        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        // Authorization reads the security context, which is thread local.
+        // Without this wrapper the worker threads would run unauthenticated.
+        ExecutorService executorService = new DelegatingSecurityContextExecutorService(
+                Executors.newFixedThreadPool(threadCount));
         CountDownLatch ready = new CountDownLatch(threadCount);
         CountDownLatch start = new CountDownLatch(1);
 

@@ -34,6 +34,7 @@ import com.owo.banking_ledger.transfer.TransferRequest;
 import com.owo.banking_ledger.transfer.TransferService;
 import com.owo.banking_ledger.withdrawal.WithdrawalRequest;
 import com.owo.banking_ledger.withdrawal.WithdrawalService;
+import org.springframework.security.test.context.support.WithMockUser;
 
 /**
  * Reconciles materialized account balances against balances derived from
@@ -41,6 +42,7 @@ import com.owo.banking_ledger.withdrawal.WithdrawalService;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")
 class LedgerReconciliationIntegrationTest {
 
     @Autowired

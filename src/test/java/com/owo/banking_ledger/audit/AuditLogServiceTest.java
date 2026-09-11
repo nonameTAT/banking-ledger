@@ -25,6 +25,7 @@ import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @ExtendWith(MockitoExtension.class)
 class AuditLogServiceTest {
@@ -34,6 +35,9 @@ class AuditLogServiceTest {
 
     @Mock
     private AccountRepository accountRepository;
+
+    @Mock
+    private AccountAccessPolicy accessPolicy;
 
     @InjectMocks
     private AuditLogService auditLogService;

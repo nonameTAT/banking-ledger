@@ -56,22 +56,39 @@ public class Account {
     @Column(name = "account_category", nullable = false)
     private AccountCategory accountCategory;
 
+    /**
+     * Subject claim of the identity that owns this account, or {@code null} for
+     * system accounts, which belong to the bank rather than to a customer.
+     */
+    @Column(name = "owner_subject")
+    private String ownerSubject;
+
     protected Account() {
     }
 
     public Account(
             String accountNumber,
             String ownerName,
-            String currency) {
+            String currency,
+            String ownerSubject) {
         this.accountNumber = accountNumber;
         this.ownerName = ownerName;
         this.currency = currency;
+        this.ownerSubject = ownerSubject;
         this.status = AccountStatus.ACTIVE;
         this.balance = BigDecimal.ZERO;
         this.version = 0L;
         this.createdAt = Instant.now();
         this.accountKind = AccountKind.CUSTOMER;
         this.accountCategory = AccountCategory.LIABILITY;
+    }
+
+    /**
+     * A system account has no owning subject, so it is never owned by a caller
+     * and stays reachable only through the administrative permission.
+     */
+    public boolean isOwnedBy(String subject) {
+        return ownerSubject != null && ownerSubject.equals(subject);
     }
 
     public void debit(BigDecimal amount) {
