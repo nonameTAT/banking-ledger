@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 
 import com.owo.banking_ledger.account.Account;
@@ -55,6 +56,7 @@ import com.owo.banking_ledger.withdrawal.WithdrawalService;
  * original transaction and its entries stay exactly as they were posted.
  */
 @SpringBootTest
+@Import(TestcontainersConfiguration.class)
 class ReversalIntegrationTest {
 
     private static final int THREADS = 4;

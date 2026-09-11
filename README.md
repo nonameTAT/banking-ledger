@@ -11,7 +11,9 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - PostgreSQL 17
 - Flyway
 - Maven Wrapper
-- Docker Compose
+- Docker / Docker Compose
+- Testcontainers
+- GitHub Actions
 
 ## Core Features
 
@@ -100,28 +102,36 @@ The project class diagram is available as a rendered SVG and PlantUML source:
 
 ## Prerequisites
 
-- Java 25
-- Docker
-- Docker Compose
+- Docker and Docker Compose, for running the stack and for the test databases
+- Java 25, only to build or run the application outside a container
 
 ## Run Locally
 
-Start PostgreSQL:
+Start the application and its database with a single command:
 
 ```bash
-docker compose up -d
+docker compose up --build
 ```
 
-Run the application:
-
-```bash
-./mvnw spring-boot:run
-```
-
-The API runs on:
+Compose builds the application image from the `Dockerfile` and waits for the
+PostgreSQL healthcheck before starting the app, so Flyway never runs against a
+database that is still booting. The API runs on:
 
 ```text
 http://localhost:8080
+```
+
+Stop everything with `docker compose down`, or add `-v` to drop the database
+volume and start from empty tables.
+
+### Run the application from source
+
+To iterate on the code without rebuilding the image, start only the database and
+run the app from Maven:
+
+```bash
+docker compose up -d postgres
+./mvnw spring-boot:run
 ```
 
 Database configuration:
@@ -133,13 +143,36 @@ username: banking
 password: banking
 ```
 
+The application reads standard Spring environment variables, so Compose points it
+at the database over the internal network by setting `SPRING_DATASOURCE_URL`,
+`SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
+
 ## Run Tests
 
 ```bash
 ./mvnw test
 ```
 
-Some tests start a full Spring context and connect to the local PostgreSQL instance on port `5433`, so keep Docker Compose running.
+Tests need a running Docker daemon but no manual database setup. Every
+`@SpringBootTest` imports `TestcontainersConfiguration`, which starts a throwaway
+`postgres:17` container and wires it in through `@ServiceConnection`. Flyway
+migrates that container on startup, so each run begins from a schema built by the
+same migrations the application ships, and the local development database on port
+`5433` is never read or written.
+
+A new integration test needs `@Import(TestcontainersConfiguration.class)`
+alongside `@SpringBootTest` to get its own database.
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests, in two
+jobs:
+
+- `test` runs the full suite on Temurin 25, with Testcontainers supplying
+  PostgreSQL, and uploads the Surefire reports.
+- `image` runs after the tests pass and builds the container image from the
+  `Dockerfile`. It builds only; pushing to a registry would need credentials and
+  is deliberately left out.
 
 ## API
 
@@ -434,4 +467,5 @@ Run selected tests:
 - `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
 - Balance-changing operations use pessimistic write locks to protect concurrent updates.
 - Ledger entries are never deleted, so integration tests do not clean up posted
-  data. Each test creates its own accounts and unique reference ids.
+  data. Each test creates its own accounts and unique reference ids, and each
+  test run starts from a fresh Testcontainers database.
