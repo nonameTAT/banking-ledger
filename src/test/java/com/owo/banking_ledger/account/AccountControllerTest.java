@@ -1,8 +1,12 @@
 package com.owo.banking_ledger.account;
 
+import com.owo.banking_ledger.security.ApiSecurityErrorWriter;
+import com.owo.banking_ledger.security.SecurityConfig;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,6 +26,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.owo.banking_ledger.common.BusinessException;
 
 @WebMvcTest(AccountController.class)
+// The real chain is imported rather than the test default: it is what
+// disables CSRF for these token-authenticated endpoints, so a POST here
+// behaves the way it does in the running application.
+@Import({ SecurityConfig.class, ApiSecurityErrorWriter.class })
+@WithMockUser
 class AccountControllerTest {
 
     @Autowired

@@ -20,6 +20,8 @@ package "com.owo.banking_ledger.account" as account {
     - Instant createdAt
     - AccountKind accountKind
     - AccountCategory accountCategory
+    - String ownerSubject
+    + isOwnedBy(String subject)
     + debit(BigDecimal amount)
     + credit(BigDecimal amount)
     + freeze()
@@ -360,6 +362,8 @@ package "com.owo.banking_ledger.common" as common {
     IDEMPOTENCY_PAYLOAD_MISMATCH
     REVERSAL_NOT_ALLOWED
     INVALID_REQUEST
+    UNAUTHENTICATED
+    ACCESS_DENIED
   }
 
   class RequestFingerprint <<utility>> {
@@ -383,6 +387,38 @@ package "com.owo.banking_ledger.common" as common {
   }
 
   class OpenApiConfig <<config>>
+}
+
+package "com.owo.banking_ledger.security" as security {
+  class SecurityConfig <<config>> {
+    + apiSecurityFilterChain(HttpSecurity http, ...)
+    - {static} jwtAuthenticationConverter(BankingSecurityProperties properties)
+    + devJwtDecoder(BankingSecurityProperties properties, String issuerUri)
+  }
+
+  class BankingSecurityProperties <<config>> {
+    adminAuthority: String
+    authoritiesClaim: String
+    authorityPrefix: String
+    devJwtSecret: String
+  }
+
+  class AuthenticatedCaller <<component>> {
+    + subject()
+    + isAdmin()
+  }
+
+  class AccountAccessPolicy <<component>> {
+    + requireAccountAccess(Long accountId)
+    + requireAccountAccess(Account account)
+    + requireAdmin(String operation)
+    + currentSubject()
+  }
+
+  class ApiSecurityErrorWriter <<component>> {
+    + commence(...)
+    + handle(...)
+  }
 }
 
 note right of LedgerEntry
@@ -469,6 +505,23 @@ AuditLogService --> AuditLogRepository
 AuditLogService --> AccountRepository
 AuditLogService ..> LedgerTransaction
 AuditLogController --> AuditLogService
+
+SecurityConfig --> BankingSecurityProperties
+SecurityConfig --> ApiSecurityErrorWriter
+AuthenticatedCaller --> BankingSecurityProperties
+AccountAccessPolicy --> AuthenticatedCaller
+AccountAccessPolicy --> AccountRepository
+AccountAccessPolicy ..> Account
+AccountAccessPolicy ..> BusinessException
+ApiSecurityErrorWriter ..> ErrorResponse
+
+AccountService --> AccountAccessPolicy
+DepositService --> AccountAccessPolicy
+WithdrawalService --> AccountAccessPolicy
+TransferService --> AccountAccessPolicy
+ReversalService --> AccountAccessPolicy
+LedgerQueryService --> AccountAccessPolicy
+AuditLogService --> AccountAccessPolicy
 
 GlobalExceptionHandler ..> BusinessException
 GlobalExceptionHandler ..> BusinessErrorCode

@@ -7,18 +7,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @Service
 public class LedgerQueryService {
 
     private final AccountRepository accountRepository;
     private final LedgerEntryRepository entryRepository;
+    private final AccountAccessPolicy accessPolicy;
 
     public LedgerQueryService(
             AccountRepository accountRepository,
-            LedgerEntryRepository entryRepository) {
+            LedgerEntryRepository entryRepository,
+            AccountAccessPolicy accessPolicy) {
         this.accountRepository = accountRepository;
         this.entryRepository = entryRepository;
+        this.accessPolicy = accessPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -28,6 +32,8 @@ public class LedgerQueryService {
         if (!accountRepository.existsById(accountId)) {
             throw new AccountNotFoundException(accountId);
         }
+
+        accessPolicy.requireAccountAccess(accountId);
 
         return entryRepository
                 .findByAccountId(accountId, pageable)

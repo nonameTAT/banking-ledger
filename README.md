@@ -12,11 +12,14 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Flyway
 - Maven Wrapper
 - Docker / Docker Compose
+- Spring Security (OAuth2 resource server, JWT)
 - Testcontainers
 - GitHub Actions
 
 ## Core Features
 
+- Bearer-token authentication on every API request
+- Account-level authorization, with a separate administrative permission
 - Create and fetch customer accounts
 - Freeze and unfreeze customer accounts
 - Deposit money into customer accounts
@@ -174,9 +177,94 @@ jobs:
   `Dockerfile`. It builds only; pushing to a registry would need credentials and
   is deliberately left out.
 
+## Authentication and Authorization
+
+Every API request must carry a bearer token. Only the OpenAPI documents
+(`/v3/api-docs`, `/swagger-ui.html`) are reachable without one.
+
+### Who may do what
+
+An account belongs to the identity that opened it, recorded as the token's
+`sub` claim in `accounts.owner_subject`. Administrators are callers whose token
+carries the `ledger:admin` scope.
+
+| Operation | Permitted caller |
+| --- | --- |
+| Create an account | Any authenticated caller; it becomes the owner |
+| Read an account | Owner or administrator |
+| Deposit, withdraw | Owner or administrator |
+| Transfer | Owner of the **source** account, or administrator |
+| Read ledger entries, audit logs | Owner or administrator |
+| Freeze, unfreeze an account | Administrator only |
+| Reverse a transaction | Administrator only |
+
+Freezing and reversal are administrative because they act against the account
+holder's own interest: freezing removes a customer's access to their money, and
+a reversal rewrites the outcome of a transaction across every account it
+touched.
+
+A transfer is authorized against the account the money leaves, so holding the
+receiving account is not enough to pull funds out of someone else's.
+
+Refused requests answer `401 UNAUTHENTICATED` or `403 ACCESS_DENIED` in the same
+JSON error shape as every other failure. A caller asking for an account it does
+not own gets `403` rather than `404`, which confirms the id exists; deployments
+that treat account ids as secret should map `ACCESS_DENIED` to a not-found
+response.
+
+### Identities come from an external provider
+
+Tokens are verified here, never issued. Point the service at an OIDC provider
+(Keycloak, Auth0, Cognito, Entra ID) and it fetches and caches that provider's
+signing keys:
+
+```bash
+SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://id.example.com/realms/banking
+```
+
+Providers disagree about where permissions live in a token, so the claim, the
+authority prefix, and the administrative authority are all configurable:
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `banking.security.authorities-claim` | `scope` | Claim listing the caller's permissions |
+| `banking.security.authority-prefix` | `SCOPE_` | Prefix added to each claim value |
+| `banking.security.admin-authority` | `SCOPE_ledger:admin` | Authority required for administrative operations |
+
+For Keycloak realm roles, for example, set the claim to `realm_access.roles` and
+the admin authority to match the role you grant.
+
+### Running without a provider
+
+So the stack runs end to end on its own, local development verifies tokens it
+signs itself, using the HMAC secret in `banking.security.dev-jwt-secret`. The
+application logs a warning on startup whenever this is active, and refuses to
+start if an issuer URI is configured at the same time.
+
+Mint a token with the bundled script:
+
+```bash
+TOKEN=$(scripts/dev-token.sh alice)                  # a customer
+ADMIN=$(scripts/dev-token.sh ops-team ledger:admin)  # an administrator
+
+curl -i http://localhost:8080/api/accounts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ownerName": "Alice", "currency": "AUD"}'
+```
+
+> **Anyone holding that secret can mint a token for any account, including an
+> administrative one.** It exists only so the project is runnable without a
+> provider. Configure `issuer-uri` for anything else.
+
 ## API
 
 ### OpenAPI / Swagger
+
+Every example below needs an `Authorization: Bearer <token>` header; it is left
+out of each snippet for brevity. See
+[Authentication and Authorization](#authentication-and-authorization) for how to
+get one.
 
 Swagger UI:
 
@@ -410,12 +498,17 @@ Common codes:
 - `IDEMPOTENCY_PAYLOAD_MISMATCH`
 - `DATA_INTEGRITY_VIOLATION`
 - `INVALID_REQUEST`
+- `UNAUTHENTICATED`
+- `ACCESS_DENIED`
 
 Examples:
 
 - Reusing a `referenceId` with a different payload returns `409 Conflict`.
 - Missing account returns `404 Not Found`.
 - Invalid amount or self-transfer returns `400 Bad Request`.
+- Missing, expired, or untrusted token returns `401 Unauthorized`.
+- Reaching an account the caller does not own, or an administrative operation
+  without the `ledger:admin` scope, returns `403 Forbidden`.
 
 ## Validation Rules
 
@@ -442,6 +535,8 @@ The test suite includes:
 - Append-only tests that attempt direct updates and deletes of posted entries
 - Reversal tests for mirrored postings, double reversal, and concurrency
 - Rollback tests for failed ledger-entry and audit-log writes
+- Authorization tests for ownership boundaries, the administrative permission,
+  and end-to-end bearer-token verification
 
 Run all tests:
 
@@ -466,6 +561,8 @@ Run selected tests:
 - `spring.jpa.hibernate.ddl-auto=validate` is enabled, so schema changes must be made through Flyway migrations.
 - `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
 - Balance-changing operations use pessimistic write locks to protect concurrent updates.
+- Authorization is enforced in the services rather than the controllers, so a
+  rule cannot be bypassed by reaching an account through a different endpoint.
 - Ledger entries are never deleted, so integration tests do not clean up posted
   data. Each test creates its own accounts and unique reference ids, and each
   test run starts from a fresh Testcontainers database.

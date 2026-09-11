@@ -27,6 +27,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.owo.banking_ledger.account.Account;
@@ -53,6 +55,7 @@ import com.owo.banking_ledger.transfer.TransferService;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")
 @AutoConfigureMockMvc
 class IdempotencyIntegrationTest {
 
@@ -270,7 +273,10 @@ class IdempotencyIntegrationTest {
     private static <T> List<T> runConcurrently(
             int threadCount,
             Callable<T> task) throws Exception {
-        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        // Authorization reads the security context, which is thread local.
+        // Without this wrapper the worker threads would run unauthenticated.
+        ExecutorService executorService = new DelegatingSecurityContextExecutorService(
+                Executors.newFixedThreadPool(threadCount));
         CountDownLatch ready = new CountDownLatch(threadCount);
         CountDownLatch start = new CountDownLatch(1);
 

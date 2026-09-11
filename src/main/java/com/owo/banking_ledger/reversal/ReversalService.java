@@ -25,6 +25,7 @@ import com.owo.banking_ledger.ledger.ReversalNotAllowedException;
 import com.owo.banking_ledger.ledger.TransactionNotFoundException;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 /**
  * Corrects a posted transaction by writing a new transaction that mirrors every
@@ -40,24 +41,31 @@ public class ReversalService {
     private final LedgerEntryRepository entryRepository;
     private final AuditLogService auditLogService;
     private final IdempotencyService idempotencyService;
+    private final AccountAccessPolicy accessPolicy;
 
     public ReversalService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
             LedgerEntryRepository entryRepository,
             AuditLogService auditLogService,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            AccountAccessPolicy accessPolicy) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
         this.auditLogService = auditLogService;
         this.idempotencyService = idempotencyService;
+        this.accessPolicy = accessPolicy;
     }
 
     @Transactional
     public ReversalResponse reverse(
             Long transactionId,
             ReversalRequest request) {
+        // A reversal rewrites the outcome of a posted transaction across every
+        // account it touched, so it is the bank's operation, not a customer's.
+        accessPolicy.requireAdmin("reverse a transaction");
+
         String requestHash = fingerprint(transactionId, request);
 
         Optional<LedgerTransaction> replayed = idempotencyService.claim(
