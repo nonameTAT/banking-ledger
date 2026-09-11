@@ -15,11 +15,11 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
- * The scheduled path never reaches the exception handler, so a run that throws
- * would otherwise leave nothing behind but a log line. That matters more than
- * it looks: if every run fails, the ledger is not being checked at all, and
- * every reconciliation alert would sit quiet because the success signal simply
- * never moves.
+ * The scheduled path never reaches the exception handler that records datastore
+ * failures for API requests, so an outage that only ever broke reconciliation
+ * would go uncounted. The failed run itself is counted by
+ * {@code ReconciliationService}, for every caller, which is why these tests
+ * expect the scheduler to add the database failure and nothing else.
  */
 class ReconciliationSchedulerTest {
 
@@ -37,14 +37,27 @@ class ReconciliationSchedulerTest {
     }
 
     @Test
-    void aRunThatThrowsIsCountedAsAFailureAndAsADatabaseFailure() {
+    void aRunThatThrowsOnAnOutageIsCountedAsADatabaseFailure() {
         Mockito.when(reconciliationService.reconcile())
                 .thenThrow(new CannotCreateTransactionException("database is down"));
 
         scheduler.reconcile();
 
-        assertEquals(1.0, reconciliationFailures("connection"), 0.0001);
         assertEquals(1.0, databaseFailures(DatabaseFailure.CONNECTION), 0.0001);
+    }
+
+    /**
+     * The service counts the failed run for every caller, so the scheduler must
+     * not count it again or one outage would read as two.
+     */
+    @Test
+    void theSchedulerDoesNotCountTheFailedRunASecondTime() {
+        Mockito.when(reconciliationService.reconcile())
+                .thenThrow(new CannotCreateTransactionException("database is down"));
+
+        scheduler.reconcile();
+
+        assertEquals(0.0, reconciliationFailures("connection"), 0.0001);
     }
 
     @Test
@@ -79,7 +92,6 @@ class ReconciliationSchedulerTest {
 
         scheduler.reconcile();
 
-        assertEquals(1.0, reconciliationFailures("other"), 0.0001);
         assertEquals(0.0, totalDatabaseFailures(), 0.0001);
     }
 

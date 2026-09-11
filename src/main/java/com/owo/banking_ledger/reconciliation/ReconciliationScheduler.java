@@ -52,12 +52,12 @@ public class ReconciliationScheduler {
                     + " account(s) and found " + run.getDifferenceCount()
                     + " difference(s)");
         } catch (RuntimeException exception) {
-            // A run that throws leaves nobody checking the ledger, so it has to
-            // be counted and not merely logged. Nothing else would notice: the
-            // scheduled path never reaches the exception handler that records
-            // failures for API requests.
+            // The failed run itself is already counted by the service, for
+            // every caller. What is missing on this path is the datastore
+            // failure: a scheduled run never reaches the exception handler that
+            // records one for API requests, so an outage that only ever broke
+            // reconciliation would otherwise go uncounted.
             DatabaseFailure cause = DatabaseFailure.classify(exception);
-            metrics.recordReconciliationFailure(cause);
 
             if (cause != null) {
                 metrics.recordDatabaseFailure(cause);
