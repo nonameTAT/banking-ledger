@@ -1,7 +1,6 @@
 services:
   postgres:
     image: postgres:17
-    container_name: banking-ledger-postgres
     environment:
       POSTGRES_DB: banking_ledger
       POSTGRES_USER: banking
@@ -10,6 +9,27 @@ services:
       - "5433:5432"
     volumes:
       - banking_ledger_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banking -d banking_ledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    # The app runs Flyway on startup, so it must not connect before Postgres
+    # accepts connections.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/banking_ledger
+      SPRING_DATASOURCE_USERNAME: banking
+      SPRING_DATASOURCE_PASSWORD: banking
+    ports:
+      - "8080:8080"
+    restart: on-failure
 
 volumes:
   banking_ledger_data:

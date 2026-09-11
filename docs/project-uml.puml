@@ -2,8 +2,11 @@
 title Banking Ledger - Project Class Diagram
 
 skinparam packageStyle rectangle
-skinparam linetype ortho
 hide empty members
+left to right direction
+
+' Services map their own request and response DTOs; those same-package edges
+' are left out so the cross-package structure stays readable.
 
 package "com.owo.banking_ledger.account" as account {
   class Account <<entity>> {
@@ -41,9 +44,14 @@ package "com.owo.banking_ledger.account" as account {
 
   interface AccountRepository <<repository>> {
     + existsByAccountNumber(String accountNumber)
+    + existsByAccountNumberAndAccountKind(String accountNumber, AccountKind kind)
     + findByAccountNumber(String accountNumber)
     + findByIdForUpdate(Long id)
     + findByAccountNumberForUpdate(String accountNumber)
+  }
+
+  class SystemAccounts <<utility>> {
+    + {static} cashAccountNumber(String currency)
   }
 
   class AccountService <<service>> {
@@ -51,6 +59,8 @@ package "com.owo.banking_ledger.account" as account {
     + findById(Long id)
     + freeze(Long id)
     + unfreeze(Long id)
+    - validateSupportedCurrency(String currency)
+    - validateCustomerAccount(Account account, String operation)
   }
 
   class AccountController <<controller>> {
@@ -88,11 +98,16 @@ package "com.owo.banking_ledger.ledger" as ledger {
     - String currency
     - String description
     - Instant createdAt
+    - String requestHash
+    - LedgerTransaction reversalOf
+    + {static} reversing(LedgerTransaction original, String referenceId, String description, String requestHash)
+    + isReversal()
+    + markReversed()
     + complete()
     + fail()
   }
 
-  class LedgerEntry <<entity>> {
+  class LedgerEntry <<entity>> <<immutable>> {
     - Long id
     - LedgerTransaction transaction
     - Account account
@@ -106,12 +121,14 @@ package "com.owo.banking_ledger.ledger" as ledger {
     DEPOSIT
     WITHDRAWAL
     TRANSFER
+    REVERSAL
   }
 
   enum TransactionStatus {
     PENDING
     COMPLETED
     FAILED
+    REVERSED
   }
 
   enum EntryType {
@@ -120,13 +137,21 @@ package "com.owo.banking_ledger.ledger" as ledger {
   }
 
   interface LedgerTransactionRepository <<repository>> {
-    + existsByReferenceId(String referenceId)
     + findByReferenceId(String referenceId)
+    + findByIdForUpdate(Long id)
   }
 
   interface LedgerEntryRepository <<repository>> {
+    + saveAll(Iterable<LedgerEntry> entries)
+    + saveAndFlush(LedgerEntry entry)
+    + findById(Long id)
     + findByAccountId(Long accountId, Pageable pageable)
     + findByTransactionId(Long transactionId)
+  }
+
+  class IdempotencyService <<service>> {
+    + claim(String referenceId, String requestHash)
+    - lock(String referenceId)
   }
 
   class LedgerQueryService <<service>> {
@@ -149,11 +174,17 @@ package "com.owo.banking_ledger.ledger" as ledger {
   }
 
   class LedgerEntryPageResponse <<dto>>
+
+  class IdempotencyConflictException <<exception>>
+  class ReversalNotAllowedException <<exception>>
+  class TransactionNotFoundException <<exception>>
 }
 
 package "com.owo.banking_ledger.deposit" as deposit {
   class DepositService <<service>> {
     + deposit(Long accountId, DepositRequest request)
+    - replayResponse(LedgerTransaction transaction, Long accountId)
+    - {static} fingerprint(Long accountId, DepositRequest request)
   }
 
   class DepositController <<controller>> {
@@ -183,6 +214,8 @@ package "com.owo.banking_ledger.deposit" as deposit {
 package "com.owo.banking_ledger.withdrawal" as withdrawal {
   class WithdrawalService <<service>> {
     + withdraw(Long accountId, WithdrawalRequest request)
+    - replayResponse(LedgerTransaction transaction, Long accountId)
+    - {static} fingerprint(Long accountId, WithdrawalRequest request)
   }
 
   class WithdrawalController <<controller>> {
@@ -210,6 +243,8 @@ package "com.owo.banking_ledger.withdrawal" as withdrawal {
 package "com.owo.banking_ledger.transfer" as transfer {
   class TransferService <<service>> {
     + transfer(TransferRequest request)
+    - replayResponse(LedgerTransaction transaction, TransferRequest request)
+    - {static} fingerprint(TransferRequest request)
   }
 
   class TransferController <<controller>> {
@@ -238,6 +273,35 @@ package "com.owo.banking_ledger.transfer" as transfer {
   }
 }
 
+package "com.owo.banking_ledger.reversal" as reversal {
+  class ReversalService <<service>> {
+    + reverse(Long transactionId, ReversalRequest request)
+    - lockAccounts(List<LedgerEntry> originalEntries)
+    - {static} validateReversible(LedgerTransaction original)
+    - {static} mirror(EntryType entryType)
+    - {static} fingerprint(Long transactionId, ReversalRequest request)
+  }
+
+  class ReversalController <<controller>> {
+    + reverse(Long transactionId, ReversalRequest request)
+  }
+
+  class ReversalRequest <<dto>> {
+    referenceId: String
+    description: String
+  }
+
+  class ReversalResponse <<dto>> {
+    transactionId: Long
+    referenceId: String
+    originalTransactionId: Long
+    originalReferenceId: String
+    amount: BigDecimal
+    currency: String
+    status: TransactionStatus
+  }
+}
+
 package "com.owo.banking_ledger.audit" as audit {
   class AuditLog <<entity>> {
     - Long id
@@ -259,6 +323,7 @@ package "com.owo.banking_ledger.audit" as audit {
     DEPOSIT_COMPLETED
     WITHDRAWAL_COMPLETED
     TRANSFER_COMPLETED
+    TRANSACTION_REVERSED
   }
 
   interface AuditLogRepository <<repository>> {
@@ -284,14 +349,23 @@ package "com.owo.banking_ledger.common" as common {
   class BusinessException <<exception>> {
     - BusinessErrorCode code
     + getCode()
-    + invalidRequest(String message)
+    + {static} invalidRequest(String message)
   }
 
   enum BusinessErrorCode {
     ACCOUNT_NOT_FOUND
+    TRANSACTION_NOT_FOUND
     DUPLICATE_TRANSACTION
     DATA_INTEGRITY_VIOLATION
+    IDEMPOTENCY_PAYLOAD_MISMATCH
+    REVERSAL_NOT_ALLOWED
     INVALID_REQUEST
+  }
+
+  class RequestFingerprint <<utility>> {
+    + {static} of(String... parts)
+    + {static} normalize(BigDecimal amount)
+    + {static} lockKey(String referenceId)
   }
 
   class ErrorResponse <<dto>> {
@@ -311,26 +385,45 @@ package "com.owo.banking_ledger.common" as common {
   class OpenApiConfig <<config>>
 }
 
+note right of LedgerEntry
+  Append-only. Mapped @Immutable, the
+  repository exposes no update or delete,
+  and a database trigger rejects any
+  UPDATE or DELETE on ledger_entries.
+end note
+
+note right of IdempotencyService
+  Takes a transaction-scoped advisory lock on
+  the reference id, then returns the original
+  transaction when the request repeats it.
+  A different payload under the same reference
+  id is rejected as a conflict.
+end note
+
 Account --> AccountStatus
 Account --> AccountKind
 Account --> AccountCategory
 AccountRepository ..> Account
 AccountService --> AccountRepository
 AccountService --> AuditLogService
-AccountService ..> CreateAccountRequest
-AccountService ..> AccountResponse
+AccountService ..> SystemAccounts
 AccountController --> AccountService
-AccountController ..> CreateAccountRequest
-AccountController ..> AccountResponse
 AccountNotFoundException --|> BusinessException
 
 LedgerTransaction --> TransactionType
 LedgerTransaction --> TransactionStatus
-LedgerEntry --> LedgerTransaction
-LedgerEntry --> Account
+LedgerTransaction --> "0..1" LedgerTransaction : reversalOf
+LedgerTransaction "1" *-- "2" LedgerEntry
+LedgerEntry --> "1" Account
 LedgerEntry --> EntryType
 LedgerTransactionRepository ..> LedgerTransaction
 LedgerEntryRepository ..> LedgerEntry
+IdempotencyService --> LedgerTransactionRepository
+IdempotencyService ..> RequestFingerprint
+IdempotencyConflictException --|> BusinessException
+ReversalNotAllowedException --|> BusinessException
+TransactionNotFoundException --|> BusinessException
+LedgerTransaction ..> ReversalNotAllowedException
 LedgerQueryService --> AccountRepository
 LedgerQueryService --> LedgerEntryRepository
 LedgerQueryController --> LedgerQueryService
@@ -340,8 +433,9 @@ DepositService --> AccountRepository
 DepositService --> LedgerTransactionRepository
 DepositService --> LedgerEntryRepository
 DepositService --> AuditLogService
-DepositService ..> DepositRequest
-DepositService ..> DepositResponse
+DepositService --> IdempotencyService
+DepositService ..> SystemAccounts
+DepositService ..> RequestFingerprint
 DuplicateTransactionException --|> BusinessException
 
 WithdrawalController --> WithdrawalService
@@ -349,16 +443,25 @@ WithdrawalService --> AccountRepository
 WithdrawalService --> LedgerTransactionRepository
 WithdrawalService --> LedgerEntryRepository
 WithdrawalService --> AuditLogService
-WithdrawalService ..> WithdrawalRequest
-WithdrawalService ..> WithdrawalResponse
+WithdrawalService --> IdempotencyService
+WithdrawalService ..> SystemAccounts
+WithdrawalService ..> RequestFingerprint
 
 TransferController --> TransferService
 TransferService --> AccountRepository
 TransferService --> LedgerTransactionRepository
 TransferService --> LedgerEntryRepository
 TransferService --> AuditLogService
-TransferService ..> TransferRequest
-TransferService ..> TransferResponse
+TransferService --> IdempotencyService
+TransferService ..> RequestFingerprint
+
+ReversalController --> ReversalService
+ReversalService --> AccountRepository
+ReversalService --> LedgerTransactionRepository
+ReversalService --> LedgerEntryRepository
+ReversalService --> AuditLogService
+ReversalService --> IdempotencyService
+ReversalService ..> RequestFingerprint
 
 AuditLog --> AuditAction
 AuditLogRepository ..> AuditLog
@@ -371,4 +474,9 @@ GlobalExceptionHandler ..> BusinessException
 GlobalExceptionHandler ..> BusinessErrorCode
 GlobalExceptionHandler ..> ErrorResponse
 BusinessException --> BusinessErrorCode
+legend bottom
+  Each service also maps its own request and response DTOs from the same
+  package; those edges are omitted so the cross-package structure stays clear.
+end legend
+
 @enduml

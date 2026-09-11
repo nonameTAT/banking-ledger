@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
@@ -39,6 +40,7 @@ import com.owo.banking_ledger.withdrawal.WithdrawalService;
  * ledger entries, applying the asset and liability posting rules.
  */
 @SpringBootTest
+@Import(TestcontainersConfiguration.class)
 class LedgerReconciliationIntegrationTest {
 
     @Autowired

@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 
 import com.owo.banking_ledger.account.Account;
@@ -36,6 +37,7 @@ import com.owo.banking_ledger.withdrawal.WithdrawalRequest;
 import com.owo.banking_ledger.withdrawal.WithdrawalService;
 
 @SpringBootTest
+@Import(TestcontainersConfiguration.class)
 class BankingConcurrencyIntegrationTest {
 
     private static final int THREADS = 10;
