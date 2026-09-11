@@ -1,5 +1,6 @@
 package com.owo.banking_ledger.ledger;
 
+import com.owo.banking_ledger.ObservabilitySliceConfiguration;
 import com.owo.banking_ledger.security.ApiSecurityErrorWriter;
 import com.owo.banking_ledger.security.SecurityConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,7 +33,10 @@ import com.owo.banking_ledger.account.AccountNotFoundException;
 // The real chain is imported rather than the test default: it is what
 // disables CSRF for these token-authenticated endpoints, so a POST here
 // behaves the way it does in the running application.
-@Import({ SecurityConfig.class, ApiSecurityErrorWriter.class })
+@Import({
+        SecurityConfig.class,
+        ApiSecurityErrorWriter.class,
+        ObservabilitySliceConfiguration.class })
 @WithMockUser
 class LedgerQueryControllerTest {
 
