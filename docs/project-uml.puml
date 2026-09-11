@@ -437,6 +437,15 @@ package "com.owo.banking_ledger.reconciliation" as reconciliation {
   interface ReconciliationRunRepository <<repository>>
   interface ReconciliationDifferenceRepository <<repository>>
 
+  class ReconciliationRunner <<component>> {
+    ~ execute()
+  }
+
+  class ReconciliationOutcome <<dto>> {
+    run: ReconciliationRun
+    differingAccountIds: List<Long>
+  }
+
   class ReconciliationService <<service>> {
     + reconcile()
     + findRuns(Pageable pageable)
@@ -586,11 +595,16 @@ ReconciliationScheduler --> ReconciliationService
 ReconciliationController --> ReconciliationService
 ReconciliationController --> AccountAccessPolicy
 ReconciliationHealthIndicator --> ReconciliationService
-ReconciliationService --> ReconciliationRepository
+ReconciliationService --> ReconciliationRunner
 ReconciliationService --> ReconciliationRunRepository
 ReconciliationService --> ReconciliationDifferenceRepository
 ReconciliationService --> LedgerMetrics
-ReconciliationService --> CurrentTrace
+ReconciliationService ..> ReconciliationOutcome
+ReconciliationRunner --> ReconciliationRepository
+ReconciliationRunner --> ReconciliationRunRepository
+ReconciliationRunner --> ReconciliationDifferenceRepository
+ReconciliationRunner --> CurrentTrace
+ReconciliationRunner ..> ReconciliationOutcome
 ReconciliationRunRepository ..> ReconciliationRun
 ReconciliationDifferenceRepository ..> ReconciliationDifference
 

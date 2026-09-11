@@ -713,6 +713,12 @@ Run selected tests:
 - `spring.jpa.hibernate.ddl-auto=validate` is enabled, so schema changes must be made through Flyway migrations.
 - `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
 - Balance-changing operations use pessimistic write locks to protect concurrent updates.
+- Reconciliation records its outcome only after the run's transaction has
+  committed. Metrics live in memory and do not roll back, so reporting success
+  from inside the transaction would let a failed commit move the last-success
+  timestamp, which is exactly what holds off the alert for reconciliation having
+  stopped. The comparison therefore runs in its own bean, and the commit happens
+  as that call returns.
 - Reconciliation reports differences and never repairs them. Ledger entries are
   the source of truth, and silently rewriting a balance would destroy the
   evidence of the defect that caused the drift.
