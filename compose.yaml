@@ -36,5 +36,21 @@ services:
       - "8080:8080"
     restart: on-failure
 
+  # Not started by a plain `docker compose up`; bring it up with
+  # `docker compose --profile observability up` when you want the alerts
+  # evaluated locally.
+  prometheus:
+    image: prom/prometheus:latest
+    profiles:
+      - observability
+    depends_on:
+      - app
+    volumes:
+      - ./ops/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
 volumes:
   banking_ledger_data:
+  prometheus_data:

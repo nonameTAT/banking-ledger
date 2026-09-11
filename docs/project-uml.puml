@@ -364,6 +364,7 @@ package "com.owo.banking_ledger.common" as common {
     INVALID_REQUEST
     UNAUTHENTICATED
     ACCESS_DENIED
+    DATABASE_UNAVAILABLE
   }
 
   class RequestFingerprint <<utility>> {
@@ -376,17 +377,95 @@ package "com.owo.banking_ledger.common" as common {
     timestamp: Instant
     code: BusinessErrorCode
     message: String
+    traceId: String
   }
 
   class GlobalExceptionHandler <<advice>> {
     + handleBusinessException(BusinessException exception)
     + handleDataIntegrityViolation(DataIntegrityViolationException exception)
+    + handleDataAccessFailure(DataAccessException exception)
     + handleValidation(MethodArgumentNotValidException exception)
     + handleIllegalArgument(IllegalArgumentException exception)
     + handleIllegalState(IllegalStateException exception)
   }
 
   class OpenApiConfig <<config>>
+}
+
+package "com.owo.banking_ledger.observability" as observability {
+  class CurrentTrace <<component>> {
+    + id()
+  }
+
+  class TraceIdResponseFilter <<filter>> {
+    + doFilterInternal(...)
+  }
+
+  class LedgerMetrics <<component>> {
+    + recordTransactionError(String reason)
+    + recordDatabaseFailure(String reason)
+    + recordReconciliationRun(int differenceCount)
+    + currentDifferences()
+  }
+}
+
+package "com.owo.banking_ledger.reconciliation" as reconciliation {
+  class ReconciliationRun <<entity>> {
+    - Long id
+    - Instant startedAt
+    - Instant finishedAt
+    - int accountsChecked
+    - int differenceCount
+    - String traceId
+    + isClean()
+  }
+
+  class ReconciliationDifference <<entity>> {
+    - Long id
+    - Long runId
+    - Long accountId
+    - BigDecimal recordedBalance
+    - BigDecimal derivedBalance
+    - BigDecimal difference
+    - Instant detectedAt
+  }
+
+  interface ReconciliationRepository <<repository>> {
+    + compareBalances()
+  }
+
+  interface ReconciliationRunRepository <<repository>>
+  interface ReconciliationDifferenceRepository <<repository>>
+
+  class ReconciliationRunner <<component>> {
+    ~ execute()
+  }
+
+  class ReconciliationOutcome <<dto>> {
+    run: ReconciliationRun
+    differingAccountIds: List<Long>
+  }
+
+  class ReconciliationService <<service>> {
+    + reconcile()
+    + findRuns(Pageable pageable)
+    + findDifferences(Long accountId, Pageable pageable)
+    + findLatestRun()
+  }
+
+  class ReconciliationScheduler <<component>> {
+    + reconcile()
+  }
+
+  class ReconciliationHealthIndicator <<component>> {
+    + health()
+  }
+
+  class ReconciliationController <<controller>> {
+    + findRuns(Pageable pageable)
+    + findDifferences(Long accountId, Pageable pageable)
+    + reconcileNow()
+  }
 }
 
 package "com.owo.banking_ledger.security" as security {
@@ -505,6 +584,29 @@ AuditLogService --> AuditLogRepository
 AuditLogService --> AccountRepository
 AuditLogService ..> LedgerTransaction
 AuditLogController --> AuditLogService
+
+TraceIdResponseFilter --> CurrentTrace
+CurrentTrace ..> ErrorResponse
+GlobalExceptionHandler --> CurrentTrace
+GlobalExceptionHandler --> LedgerMetrics
+ApiSecurityErrorWriter --> CurrentTrace
+
+ReconciliationScheduler --> ReconciliationService
+ReconciliationController --> ReconciliationService
+ReconciliationController --> AccountAccessPolicy
+ReconciliationHealthIndicator --> ReconciliationService
+ReconciliationService --> ReconciliationRunner
+ReconciliationService --> ReconciliationRunRepository
+ReconciliationService --> ReconciliationDifferenceRepository
+ReconciliationService --> LedgerMetrics
+ReconciliationService ..> ReconciliationOutcome
+ReconciliationRunner --> ReconciliationRepository
+ReconciliationRunner --> ReconciliationRunRepository
+ReconciliationRunner --> ReconciliationDifferenceRepository
+ReconciliationRunner --> CurrentTrace
+ReconciliationRunner ..> ReconciliationOutcome
+ReconciliationRunRepository ..> ReconciliationRun
+ReconciliationDifferenceRepository ..> ReconciliationDifference
 
 SecurityConfig --> BankingSecurityProperties
 SecurityConfig --> ApiSecurityErrorWriter
