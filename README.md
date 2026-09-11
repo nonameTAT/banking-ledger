@@ -15,6 +15,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Spring Security (OAuth2 resource server, JWT)
 - Spring Boot Actuator, Micrometer, Micrometer Tracing (Brave)
 - Prometheus
+- k6 (load testing)
 - Testcontainers
 - GitHub Actions
 
@@ -24,6 +25,8 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Metrics and alert rules for transaction errors, database failures, and
   reconciliation differences
 - Scheduled ledger reconciliation with queryable results
+- Bounded timeouts, with verified behaviour under outages, timeouts, and deadlocks
+- Load-tested capacity figures and a rehearsed backup and restore
 - Bearer-token authentication on every API request
 - Account-level authorization, with a separate administrative permission
 - Create and fetch customer accounts
@@ -394,6 +397,78 @@ would never move off zero, and a rule reading `== 0` on that cannot tell
 `time() - 0` is enormous and the alert fires, which is the correct reading of a
 ledger that has never once been checked.
 
+## Failure Handling and Capacity
+
+Measured rather than assumed. Two reports carry the numbers:
+
+- [Capacity report](docs/capacity-report.md) — what the service sustains, and
+  the defect the load test uncovered
+- [Recovery rehearsal](docs/recovery-rehearsal.md) — a real restore, and what it
+  cost
+
+### Timeouts
+
+Nothing is allowed to wait indefinitely. Without a bound, a database that has
+stopped answering does not fail requests, it holds their threads, and the
+service stops serving the endpoints that never needed a database.
+
+Three bounds nest, innermost first, so a request fails at the layer that knows
+most about what went wrong rather than at the blunt outer one:
+
+| Bound | Default | What it limits |
+| --- | --- | --- |
+| `spring.datasource.hikari.connection-timeout` | 3s | Waiting for a pooled connection |
+| `spring.transaction.default-timeout` | 10s | How long a transaction may run |
+| `statement_timeout` (via `BANKING_STATEMENT_TIMEOUT_MS`) | 30s | A runaway query, in the database |
+
+Reconciliation scans every account, so it is given its own longer transaction
+timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
+`statement_timeout`, which is the number to raise for a large ledger.
+
+### What failure looks like
+
+| Failure | Behaviour | Verified by |
+| --- | --- | --- |
+| Database unreachable | `503 DATABASE_UNAVAILABLE`, counted as `connection`, bounded by the connection timeout | `DatabaseOutageTest` |
+| Connections killed underneath the pool | The next request succeeds; the pool replaces them | `FailureHandlingIntegrationTest` |
+| Query overruns its timeout | Cut off, counted as `timeout` | `FailureHandlingIntegrationTest` |
+| Deadlock | PostgreSQL kills one side; the victim is counted as datastore trouble | `FailureHandlingIntegrationTest` |
+| Opposing transfers | Do not deadlock, because transfers always lock the lower account id first | `FailureHandlingIntegrationTest` |
+
+A known gap: when a transaction fails **and** its rollback fails too, Spring
+replaces the original exception with the rollback's and logs "Application
+exception overridden by rollback exception". What reaches the handler then says
+only that a connection could not be rolled back, so a deadlock lands in the
+`other` bucket rather than `lock`. The exception class is still logged with the
+request's trace id, so it stays diagnosable; nothing can recover the category
+from an exception that no longer contains it.
+
+### Capacity
+
+Throughput peaks near **790 requests per second at about 25 concurrent
+clients**, with p95 around 103 ms and no failures. Past that, throughput stops
+rising and latency grows in proportion to the load added: the queue grows, the
+work does not.
+
+The limit is the write path. Every deposit and withdrawal posts against the
+single `SYSTEM-CASH-AUD` account and takes a row lock on it, which serialises
+cash movement service-wide. The same shape without writes sustains 1,304 req/s
+at half the latency. See the [capacity report](docs/capacity-report.md) for the
+full table and the fix it prompted.
+
+### Backup and restore
+
+```bash
+scripts/backup.sh                      # prints the path it wrote
+scripts/restore.sh backups/<file>.dump # replaces the live database
+```
+
+A rehearsed restore took 12 seconds and lost every transaction posted after the
+backup was taken. The restored ledger reconciles cleanly, which is exactly why
+the loss is dangerous: nothing detects it afterwards. See the
+[recovery rehearsal](docs/recovery-rehearsal.md) for the limits this
+demonstrates.
+
 ## API
 
 ### OpenAPI / Swagger
@@ -689,6 +764,10 @@ The test suite includes:
   the unreachable-database path that fails before a statement runs
 - Reconciliation tests that introduce real balance drift and assert it is
   detected, recorded, and reportable
+- Failure handling tests for statement timeouts, killed connections, real
+  deadlocks, and contention on the account owner's own path
+- Outage tests that stop a database and assert failures are bounded and
+  recognisable
 
 Run all tests:
 

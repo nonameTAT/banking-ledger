@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.owo.banking_ledger.account.Account;
 import com.owo.banking_ledger.account.AccountNotFoundException;
+import com.owo.banking_ledger.account.AccountOwnership;
 import com.owo.banking_ledger.account.AccountRepository;
 import com.owo.banking_ledger.common.BusinessErrorCode;
 import com.owo.banking_ledger.common.BusinessException;
@@ -46,10 +47,28 @@ public class AccountAccessPolicy {
             return;
         }
 
-        Account account = accountRepository.findById(accountId)
+        // Reads ownership only. Loading the account here would seed the
+        // persistence context, and the locking read that follows in the calling
+        // service would then be served that stale copy instead of the row it
+        // just locked, failing the version check at flush under contention.
+        AccountOwnership ownership = accountRepository
+                .findOwnershipById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException(accountId));
 
-        requireAccountAccess(account);
+        if (!isOwnedBy(ownership, caller.subject())) {
+            throw new BusinessException(
+                    BusinessErrorCode.ACCESS_DENIED,
+                    "Caller is not authorized for account " + accountId);
+        }
+    }
+
+    /**
+     * Mirrors {@link Account#isOwnedBy}: a system account has no owning
+     * subject, so it is never owned by a caller.
+     */
+    private static boolean isOwnedBy(AccountOwnership ownership, String subject) {
+        return ownership.getOwnerSubject() != null
+                && ownership.getOwnerSubject().equals(subject);
     }
 
     /**
