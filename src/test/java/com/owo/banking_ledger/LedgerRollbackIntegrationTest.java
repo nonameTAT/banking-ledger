@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -47,6 +48,7 @@ import com.owo.banking_ledger.transfer.TransferService;
  * leaving no partially written transaction, entry, or balance change.
  */
 @SpringBootTest
+@Import(TestcontainersConfiguration.class)
 class LedgerRollbackIntegrationTest {
 
     @Autowired
