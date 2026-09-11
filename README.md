@@ -299,11 +299,33 @@ Exposed at `/actuator/prometheus`:
 | `banking_transaction_errors_total{reason}` | counter | Money movement that did not complete, tagged by error code |
 | `banking_database_failures_total{reason}` | counter | Requests that failed on a datastore error rather than on the request itself |
 | `banking_reconciliation_runs_total{outcome}` | counter | Completed reconciliation runs, `clean` or `differences` |
+| `banking_reconciliation_failures_total{cause}` | counter | Reconciliation runs that threw instead of completing |
 | `banking_reconciliation_differences` | gauge | Accounts the last run found disagreeing with their ledger |
+| `banking_reconciliation_last_success_timestamp` | gauge | When reconciliation last completed, epoch seconds; `0` means never |
 
 Authentication and authorization refusals are deliberately **not** counted as
 transaction errors. A customer reaching for an account they do not own is not
-the ledger failing, and alerting on it would bury real faults.
+the ledger failing, and alerting on it would bury real faults. A datastore
+outage is counted only as a database failure, so one incident does not read as
+two unrelated problems.
+
+**Every series is published at zero from startup rather than appearing the
+first time it is needed.** A counter that springs into existence already at one
+hides the event it was meant to report: `increase()` and `rate()` need two
+samples inside their window, so a series born at one and left alone cannot be
+told from one that was always one, and the first database failure would produce
+no alert. This is also why the tag values are drawn from fixed sets: letting the
+datastore decide how many series exist is how a metrics backend gets
+overwhelmed, so `reason` on a database failure is a category
+(`connection`, `timeout`, `lock`, `other`) and the exact exception type goes to
+the log, where the trace id already leads.
+
+Spring reports datastore trouble through two unrelated hierarchies, and both
+are counted. `DataAccessException` covers a statement that failed;
+`TransactionException` covers never getting as far as running one, which is
+what an unreachable database produces. Watching only the first would stay silent
+through an outage. Reconciliation runs on a timer and never reaches the
+exception handler, so the scheduler records its own failures too.
 
 `/actuator/health` and `/actuator/prometheus` are reachable without a token,
 because a load balancer and Prometheus generally cannot hold one. They expose
@@ -355,15 +377,22 @@ evaluating:
 | `BankingTransactionErrors` | Transaction errors average > 0.2/s for 10 minutes | warning |
 | `BankingDatabaseFailures` | Any datastore failure in 5 minutes | critical |
 | `BankingReconciliationDifferences` | The last run found any disagreeing account | critical |
-| `BankingReconciliationStalled` | No run has completed in 30 minutes | warning |
+| `BankingReconciliationStalled` | Nothing reconciled for 30 minutes, **or never** | warning |
+| `BankingReconciliationFailing` | Runs are being attempted and throwing | warning |
 | `BankingLedgerDown` | The metrics endpoint cannot be scraped | critical |
 
 The thresholds differ on purpose. Some rejections are the system working
 correctly, so transaction errors alert on a sustained rate rather than a single
 occurrence. A database failure or a balance disagreeing with its entries is
-never routine, so one is enough. `BankingReconciliationStalled` exists because
-the reconciliation alert would otherwise go quiet if the check simply stopped
-running.
+never routine, so one is enough.
+
+`BankingReconciliationStalled` is written against the last-success timestamp
+rather than counting runs in a window, because counting cannot report a service
+whose reconciliation has failed every time since it started: the run counter
+would never move off zero, and a rule reading `== 0` on that cannot tell
+"stopped" from "never started". The gauge holds `0` until the first success, so
+`time() - 0` is enormous and the alert fires, which is the correct reading of a
+ledger that has never once been checked.
 
 ## API
 
@@ -654,6 +683,10 @@ The test suite includes:
   and end-to-end bearer-token verification
 - Observability tests for trace id propagation, failure counters, and the
   reachability of the operational endpoints
+- Metric tests asserting every failure series is published at zero before
+  anything fails, so the first occurrence is an observable change
+- Datastore failure tests covering both Spring exception hierarchies, including
+  the unreachable-database path that fails before a statement runs
 - Reconciliation tests that introduce real balance drift and assert it is
   detected, recorded, and reportable
 

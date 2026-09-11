@@ -1,13 +1,17 @@
 package com.owo.banking_ledger.common;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.TransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.owo.banking_ledger.observability.CurrentTrace;
+import com.owo.banking_ledger.observability.DatabaseFailure;
 import com.owo.banking_ledger.observability.LedgerMetrics;
 
 /**
@@ -18,6 +22,9 @@ import com.owo.banking_ledger.observability.LedgerMetrics;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Log logger =
+            LogFactory.getLog(GlobalExceptionHandler.class);
 
     private final CurrentTrace currentTrace;
     private final LedgerMetrics metrics;
@@ -35,8 +42,8 @@ public class GlobalExceptionHandler {
         // Authentication and authorization refusals are not money movement
         // going wrong, so they are left out of the transaction error signal
         // that alerting watches.
-        if (isLedgerFailure(exception.getCode())) {
-            metrics.recordTransactionError(exception.getCode().name());
+        if (exception.getCode().isLedgerFailure()) {
+            metrics.recordTransactionError(exception.getCode());
         }
 
         return ResponseEntity
@@ -48,7 +55,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
             DataIntegrityViolationException exception) {
         metrics.recordTransactionError(
-                BusinessErrorCode.DATA_INTEGRITY_VIOLATION.name());
+                BusinessErrorCode.DATA_INTEGRITY_VIOLATION);
 
         return respond(
                 BusinessErrorCode.DATA_INTEGRITY_VIOLATION,
@@ -59,11 +66,25 @@ public class GlobalExceptionHandler {
      * Anything the datastore failed at that was not a constraint the caller
      * tripped: a lost connection, a lock timeout, a deadlock. These say the
      * service is unwell rather than that the request was wrong.
+     *
+     * <p>Both datastore hierarchies are handled here. A failed statement
+     * arrives as a {@link DataAccessException}, but a database that cannot be
+     * reached at all fails earlier, when the transaction is opened, and arrives
+     * as a {@link TransactionException}, which is not a
+     * {@code DataAccessException} and would otherwise escape as an untracked
+     * server error during exactly the outage this is meant to report.
      */
-    @ExceptionHandler(DataAccessException.class)
-    public ResponseEntity<ErrorResponse> handleDataAccessFailure(
-            DataAccessException exception) {
-        metrics.recordDatabaseFailure(exception.getClass().getSimpleName());
+    @ExceptionHandler({ DataAccessException.class, TransactionException.class })
+    public ResponseEntity<ErrorResponse> handleDatastoreFailure(
+            RuntimeException exception) {
+        DatabaseFailure failure = DatabaseFailure.classify(exception);
+        metrics.recordDatabaseFailure(
+                failure == null ? DatabaseFailure.OTHER : failure);
+
+        // The metric tag is deliberately coarse, so the exact type is logged
+        // here, where the request's trace id already leads.
+        logger.error("Datastore failure ("
+                + exception.getClass().getSimpleName() + ")", exception);
 
         return respond(
                 BusinessErrorCode.DATABASE_UNAVAILABLE,
@@ -101,12 +122,5 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(code.status())
                 .body(ErrorResponse.of(code, message, currentTrace.id()));
-    }
-
-    private static boolean isLedgerFailure(BusinessErrorCode code) {
-        return switch (code) {
-            case UNAUTHENTICATED, ACCESS_DENIED -> false;
-            default -> true;
-        };
     }
 }

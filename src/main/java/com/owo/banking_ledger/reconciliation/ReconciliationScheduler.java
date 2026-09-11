@@ -6,6 +6,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.owo.banking_ledger.observability.DatabaseFailure;
+import com.owo.banking_ledger.observability.LedgerMetrics;
+
 /**
  * Runs reconciliation on a timer.
  *
@@ -25,9 +28,13 @@ public class ReconciliationScheduler {
             LogFactory.getLog(ReconciliationScheduler.class);
 
     private final ReconciliationService reconciliationService;
+    private final LedgerMetrics metrics;
 
-    public ReconciliationScheduler(ReconciliationService reconciliationService) {
+    public ReconciliationScheduler(
+            ReconciliationService reconciliationService,
+            LedgerMetrics metrics) {
         this.reconciliationService = reconciliationService;
+        this.metrics = metrics;
     }
 
     /**
@@ -45,6 +52,17 @@ public class ReconciliationScheduler {
                     + " account(s) and found " + run.getDifferenceCount()
                     + " difference(s)");
         } catch (RuntimeException exception) {
+            // A run that throws leaves nobody checking the ledger, so it has to
+            // be counted and not merely logged. Nothing else would notice: the
+            // scheduled path never reaches the exception handler that records
+            // failures for API requests.
+            DatabaseFailure cause = DatabaseFailure.classify(exception);
+            metrics.recordReconciliationFailure(cause);
+
+            if (cause != null) {
+                metrics.recordDatabaseFailure(cause);
+            }
+
             logger.error("Reconciliation run failed", exception);
         }
     }

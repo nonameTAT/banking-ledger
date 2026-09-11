@@ -18,7 +18,10 @@ groups:
             whether this is one error code or several.
 
       # The datastore failing is never routine, so this is deliberately far more
-      # sensitive than the transaction error rule above.
+      # sensitive than the transaction error rule above. A single failure is
+      # enough, which only works because the counter is published at zero from
+      # startup: increase() needs a prior sample to see the step up to one, and
+      # a series that first appears already at one would never produce it.
       - alert: BankingDatabaseFailures
         expr: sum(increase(banking_database_failures_total[5m])) > 0
         for: 1m
@@ -46,10 +49,23 @@ groups:
             for the affected accounts. Do not correct balances by hand; entries
             are the source of truth.
 
-      # The three rules above all go quiet if reconciliation simply stops, so
-      # this one watches that the check itself is still running.
+      # The rules above all go quiet if reconciliation simply stops, so this one
+      # watches that the check itself is still running.
+      #
+      # Deliberately written against a last-success timestamp rather than
+      # counting runs in a window. Counting cannot report a service whose
+      # reconciliation has failed every time since it started: the run counter
+      # would sit at zero and `== 0` on an all-zero sum never distinguishes
+      # "stopped" from "never started". The gauge holds 0 until the first
+      # success, so `time() - 0` is enormous and the alert fires, which is the
+      # correct reading of a ledger that has never once been checked.
+      #
+      # The absent() arm covers the metric not being published at all, which is
+      # what an older build or a broken registry looks like.
       - alert: BankingReconciliationStalled
-        expr: sum(increase(banking_reconciliation_runs_total[30m])) == 0
+        expr: >-
+          (time() - banking_reconciliation_last_success_timestamp > 1800)
+          or absent(banking_reconciliation_last_success_timestamp)
         for: 5m
         labels:
           severity: warning
@@ -57,7 +73,23 @@ groups:
           summary: Reconciliation has stopped running
           description: >-
             No reconciliation run has completed in the last 30 minutes, so the
-            ledger is no longer being checked against itself.
+            ledger is no longer being checked against itself. A value of 0 for
+            banking_reconciliation_last_success_timestamp means it has never
+            completed; check banking_reconciliation_failures_total for why.
+
+      # Separate from the stalled rule: this one says runs are being attempted
+      # and throwing, which usually points at the database rather than at the
+      # scheduler.
+      - alert: BankingReconciliationFailing
+        expr: sum(increase(banking_reconciliation_failures_total[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Reconciliation runs are failing
+          description: >-
+            Reconciliation is being attempted but throwing. The cause label
+            distinguishes a database problem from anything else.
 
       - alert: BankingLedgerDown
         expr: up{job="banking-ledger"} == 0
