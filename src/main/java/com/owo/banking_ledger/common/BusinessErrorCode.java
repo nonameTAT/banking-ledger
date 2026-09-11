@@ -9,7 +9,9 @@ public enum BusinessErrorCode {
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT),
     IDEMPOTENCY_PAYLOAD_MISMATCH(HttpStatus.CONFLICT),
     REVERSAL_NOT_ALLOWED(HttpStatus.CONFLICT),
-    INVALID_REQUEST(HttpStatus.BAD_REQUEST);
+    INVALID_REQUEST(HttpStatus.BAD_REQUEST),
+    UNAUTHENTICATED(HttpStatus.UNAUTHORIZED),
+    ACCESS_DENIED(HttpStatus.FORBIDDEN);
 
     private final HttpStatus status;
 

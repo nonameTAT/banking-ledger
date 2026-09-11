@@ -1,8 +1,12 @@
 package com.owo.banking_ledger.reversal;
 
+import com.owo.banking_ledger.security.ApiSecurityErrorWriter;
+import com.owo.banking_ledger.security.SecurityConfig;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -21,6 +25,11 @@ import com.owo.banking_ledger.ledger.TransactionNotFoundException;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 
 @WebMvcTest(ReversalController.class)
+// The real chain is imported rather than the test default: it is what
+// disables CSRF for these token-authenticated endpoints, so a POST here
+// behaves the way it does in the running application.
+@Import({ SecurityConfig.class, ApiSecurityErrorWriter.class })
+@WithMockUser
 class ReversalControllerTest {
 
     @Autowired

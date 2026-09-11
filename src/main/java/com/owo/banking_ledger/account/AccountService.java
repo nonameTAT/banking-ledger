@@ -8,18 +8,22 @@ import org.springframework.transaction.annotation.Transactional;
 import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessException;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @Service
 public class AccountService {
 
     private final AccountRepository accountRepository;
     private final AuditLogService auditLogService;
+    private final AccountAccessPolicy accessPolicy;
 
     public AccountService(
             AccountRepository accountRepository,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            AccountAccessPolicy accessPolicy) {
         this.accountRepository = accountRepository;
         this.auditLogService = auditLogService;
+        this.accessPolicy = accessPolicy;
     }
 
     @Transactional
@@ -28,10 +32,14 @@ public class AccountService {
 
         String accountNumber = generateAccountNumber();
 
+        // An account belongs to whoever opened it. There is no way to open an
+        // account on another identity's behalf, so ownership can never be
+        // assigned to a subject the caller does not control.
         Account account = new Account(
                 accountNumber,
                 request.ownerName(),
-                request.currency());
+                request.currency(),
+                accessPolicy.currentSubject());
 
         Account savedAccount = accountRepository.save(account);
         auditLogService.recordAccountEvent(
@@ -47,11 +55,17 @@ public class AccountService {
         Account account = accountRepository.findById(id)
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
+        accessPolicy.requireAccountAccess(account);
+
         return AccountResponse.from(account);
     }
 
     @Transactional
     public AccountResponse freeze(Long id) {
+        // Freezing blocks the account holder's own access, so it is a bank
+        // action rather than something a customer may do to their account.
+        accessPolicy.requireAdmin("freeze an account");
+
         Account account = accountRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new AccountNotFoundException(id));
 
@@ -68,6 +82,10 @@ public class AccountService {
 
     @Transactional
     public AccountResponse unfreeze(Long id) {
+        // Freezing blocks the account holder's own access, so it is a bank
+        // action rather than something a customer may do to their account.
+        accessPolicy.requireAdmin("unfreeze an account");
+
         Account account = accountRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new AccountNotFoundException(id));
 

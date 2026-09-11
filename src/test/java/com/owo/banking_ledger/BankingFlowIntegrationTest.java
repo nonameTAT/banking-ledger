@@ -14,6 +14,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,6 +39,7 @@ import com.owo.banking_ledger.ledger.TransactionType;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")
 @AutoConfigureMockMvc
 @Transactional
 class BankingFlowIntegrationTest {

@@ -23,6 +23,7 @@ import com.owo.banking_ledger.ledger.LedgerEntryRepository;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
 import com.owo.banking_ledger.ledger.LedgerTransactionRepository;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @Service
 public class DepositService {
@@ -32,24 +33,29 @@ public class DepositService {
     private final LedgerEntryRepository entryRepository;
     private final AuditLogService auditLogService;
     private final IdempotencyService idempotencyService;
+    private final AccountAccessPolicy accessPolicy;
 
     public DepositService(
             AccountRepository accountRepository,
             LedgerTransactionRepository transactionRepository,
             LedgerEntryRepository entryRepository,
             AuditLogService auditLogService,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            AccountAccessPolicy accessPolicy) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.entryRepository = entryRepository;
         this.auditLogService = auditLogService;
         this.idempotencyService = idempotencyService;
+        this.accessPolicy = accessPolicy;
     }
 
     @Transactional
     public DepositResponse deposit(
             Long accountId,
             DepositRequest request) {
+        accessPolicy.requireAccountAccess(accountId);
+
         String requestHash = fingerprint(accountId, request);
 
         Optional<LedgerTransaction> replayed = idempotencyService.claim(

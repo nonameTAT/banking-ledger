@@ -25,15 +25,21 @@ import com.owo.banking_ledger.audit.AuditAction;
 import com.owo.banking_ledger.audit.AuditLogService;
 import com.owo.banking_ledger.common.BusinessErrorCode;
 import com.owo.banking_ledger.common.BusinessException;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
+
+    private static final String OWNER_SUBJECT = "owner-subject";
 
     @Mock
     private AccountRepository accountRepository;
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private AccountAccessPolicy accessPolicy;
 
     @InjectMocks
     private AccountService accountService;
@@ -96,7 +102,7 @@ class AccountServiceTest {
 
     @Test
     void findByIdReturnsAccount() {
-        Account account = new Account("ABCDEF1234567890", "Alice", "AUD");
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD", OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", 1L);
 
         when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
@@ -124,7 +130,7 @@ class AccountServiceTest {
 
     @Test
     void freezeMarksAccountFrozen() {
-        Account account = new Account("ABCDEF1234567890", "Alice", "AUD");
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD", OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", 1L);
 
         when(accountRepository.findByIdForUpdate(1L))
@@ -142,7 +148,7 @@ class AccountServiceTest {
 
     @Test
     void unfreezeMarksAccountActive() {
-        Account account = new Account("ABCDEF1234567890", "Alice", "AUD");
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD", OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", 1L);
         account.freeze();
 
@@ -207,7 +213,7 @@ class AccountServiceTest {
     }
 
     private static Account systemCashAccount() {
-        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD");
+        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD", null);
         ReflectionTestUtils.setField(account, "id", 1L);
         ReflectionTestUtils.setField(account, "accountKind", AccountKind.SYSTEM);
         ReflectionTestUtils.setField(

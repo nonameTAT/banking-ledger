@@ -27,6 +27,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/banking_ledger
       SPRING_DATASOURCE_USERNAME: banking
       SPRING_DATASOURCE_PASSWORD: banking
+      # Local stack signs and verifies its own tokens so it runs without an
+      # identity provider. Point the service at a real one by replacing this with
+      # SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI; setting both is
+      # rejected at startup.
+      BANKING_DEV_JWT_SECRET: local-development-only-secret-do-not-deploy
     ports:
       - "8080:8080"
     restart: on-failure

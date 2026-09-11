@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.owo.banking_ledger.account.AccountResponse;
@@ -33,6 +34,7 @@ import jakarta.persistence.PersistenceContext;
  */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
+@WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")
 class LedgerAppendOnlyIntegrationTest {
 
     @Autowired
