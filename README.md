@@ -13,11 +13,17 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - Maven Wrapper
 - Docker / Docker Compose
 - Spring Security (OAuth2 resource server, JWT)
+- Spring Boot Actuator, Micrometer, Micrometer Tracing (Brave)
+- Prometheus
 - Testcontainers
 - GitHub Actions
 
 ## Core Features
 
+- Trace id on every request, its log lines, and its error responses
+- Metrics and alert rules for transaction errors, database failures, and
+  reconciliation differences
+- Scheduled ledger reconciliation with queryable results
 - Bearer-token authentication on every API request
 - Account-level authorization, with a separate administrative permission
 - Create and fetch customer accounts
@@ -257,6 +263,108 @@ curl -i http://localhost:8080/api/accounts \
 > administrative one.** It exists only so the project is runnable without a
 > provider. Configure `issuer-uri` for anything else.
 
+## Observability
+
+### Trace ids
+
+Every request runs inside a trace. Its id appears in three places, all the same
+value, so a report of "this call failed at 10:42" can be followed straight into
+the logs:
+
+- the `X-Trace-Id` response header, on success and on failure alike
+- the `traceId` field of any error response body
+- the `[traceId-spanId]` field of every log line the request produced
+
+```bash
+curl -sD - http://localhost:8080/api/accounts/1 -H "Authorization: Bearer $TOKEN" \
+  | grep -i x-trace-id
+# x-trace-id: 6aa4567d7677624e63ae5f3446d079a2
+
+docker compose logs app | grep 6aa4567d7677624e63ae5f3446d079a2
+```
+
+Sampling is set to 1.0 rather than the default 0.1: the id is used to find one
+specific call's logs, which only works if every call has one.
+
+The trace-id filter is ordered deliberately, after the filter that starts the
+trace and before Spring Security. Running it later would leave exactly the
+rejected requests that most need an id without one.
+
+### Metrics
+
+Exposed at `/actuator/prometheus`:
+
+| Metric | Type | Meaning |
+| --- | --- | --- |
+| `banking_transaction_errors_total{reason}` | counter | Money movement that did not complete, tagged by error code |
+| `banking_database_failures_total{reason}` | counter | Requests that failed on a datastore error rather than on the request itself |
+| `banking_reconciliation_runs_total{outcome}` | counter | Completed reconciliation runs, `clean` or `differences` |
+| `banking_reconciliation_differences` | gauge | Accounts the last run found disagreeing with their ledger |
+
+Authentication and authorization refusals are deliberately **not** counted as
+transaction errors. A customer reaching for an account they do not own is not
+the ledger failing, and alerting on it would bury real faults.
+
+`/actuator/health` and `/actuator/prometheus` are reachable without a token,
+because a load balancer and Prometheus generally cannot hold one. They expose
+operational counts rather than account data, and a deployment should still keep
+them on an internal network. Every other actuator endpoint needs the
+`ledger:admin` scope.
+
+### Reconciliation
+
+`Account.balance` is a materialized figure kept for fast, lock-safe reads;
+ledger entries are the source of truth. The two can only drift through a
+defect, so a scheduled job recomputes every account's balance from its entries
+and records what it finds.
+
+Results are stored, not just counted, because a metric can say that something
+drifted but not which account, by how much, or when it started:
+
+```bash
+curl -s http://localhost:8080/api/reconciliation/runs        -H "Authorization: Bearer $ADMIN"
+curl -s http://localhost:8080/api/reconciliation/differences -H "Authorization: Bearer $ADMIN"
+curl -s "http://localhost:8080/api/reconciliation/differences?accountId=2" -H "Authorization: Bearer $ADMIN"
+curl -s -X POST http://localhost:8080/api/reconciliation/runs -H "Authorization: Bearer $ADMIN"  # run it now
+```
+
+A clean run is recorded too, so that "no differences" can be told apart from
+"reconciliation stopped running". `/actuator/health` reports `DOWN` while the
+last run found differences.
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `banking.reconciliation.scheduled` | `true` | Whether the timer runs at all |
+| `banking.reconciliation.initial-delay` | `PT1M` | Wait before the first run |
+| `banking.reconciliation.interval` | `PT5M` | Gap between runs |
+
+### Alerting
+
+`ops/prometheus/alerts.yml` defines the rules. Bring the monitoring stack up
+alongside the application:
+
+```bash
+docker compose --profile observability up --build
+```
+
+Prometheus is then on `http://localhost:9090`, scraping the application and
+evaluating:
+
+| Alert | Fires when | Severity |
+| --- | --- | --- |
+| `BankingTransactionErrors` | Transaction errors average > 0.2/s for 10 minutes | warning |
+| `BankingDatabaseFailures` | Any datastore failure in 5 minutes | critical |
+| `BankingReconciliationDifferences` | The last run found any disagreeing account | critical |
+| `BankingReconciliationStalled` | No run has completed in 30 minutes | warning |
+| `BankingLedgerDown` | The metrics endpoint cannot be scraped | critical |
+
+The thresholds differ on purpose. Some rejections are the system working
+correctly, so transaction errors alert on a sustained rate rather than a single
+occurrence. A database failure or a balance disagreeing with its entries is
+never routine, so one is enough. `BankingReconciliationStalled` exists because
+the reconciliation alert would otherwise go quiet if the check simply stopped
+running.
+
 ## API
 
 ### OpenAPI / Swagger
@@ -485,7 +593,8 @@ Errors are returned as structured JSON:
 {
   "timestamp": "2026-07-08T00:00:00Z",
   "code": "ACCOUNT_NOT_FOUND",
-  "message": "Account not found: 99999"
+  "message": "Account not found: 99999",
+  "traceId": "6aa4567d7677624e63ae5f3446d079a2"
 }
 ```
 
@@ -500,6 +609,7 @@ Common codes:
 - `INVALID_REQUEST`
 - `UNAUTHENTICATED`
 - `ACCESS_DENIED`
+- `DATABASE_UNAVAILABLE`
 
 Examples:
 
@@ -509,6 +619,11 @@ Examples:
 - Missing, expired, or untrusted token returns `401 Unauthorized`.
 - Reaching an account the caller does not own, or an administrative operation
   without the `ledger:admin` scope, returns `403 Forbidden`.
+- A datastore failure returns `503 Service Unavailable` and is counted
+  separately from errors the request itself caused.
+
+`traceId` is the id of the trace that produced the error; quote it to find the
+request's log lines.
 
 ## Validation Rules
 
@@ -537,6 +652,10 @@ The test suite includes:
 - Rollback tests for failed ledger-entry and audit-log writes
 - Authorization tests for ownership boundaries, the administrative permission,
   and end-to-end bearer-token verification
+- Observability tests for trace id propagation, failure counters, and the
+  reachability of the operational endpoints
+- Reconciliation tests that introduce real balance drift and assert it is
+  detected, recorded, and reportable
 
 Run all tests:
 
@@ -561,6 +680,9 @@ Run selected tests:
 - `spring.jpa.hibernate.ddl-auto=validate` is enabled, so schema changes must be made through Flyway migrations.
 - `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
 - Balance-changing operations use pessimistic write locks to protect concurrent updates.
+- Reconciliation reports differences and never repairs them. Ledger entries are
+  the source of truth, and silently rewriting a balance would destroy the
+  evidence of the defect that caused the drift.
 - Authorization is enforced in the services rather than the controllers, so a
   rule cannot be bypassed by reaching an account through a different endpoint.
 - Ledger entries are never deleted, so integration tests do not clean up posted

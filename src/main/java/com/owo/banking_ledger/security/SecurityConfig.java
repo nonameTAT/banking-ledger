@@ -51,6 +51,20 @@ public class SecurityConfig {
             "/swagger-ui/**"
     };
 
+    /**
+     * Liveness and the metrics scrape are left open because the things that
+     * consume them, a load balancer and Prometheus, generally cannot hold a
+     * token from the identity provider. They expose operational counts rather
+     * than account data, and a deployment should still keep them on an internal
+     * network or behind the ingress. Every other actuator endpoint needs the
+     * administrative permission.
+     */
+    private static final String[] PUBLIC_OPERATIONAL_PATHS = {
+            "/actuator/health",
+            "/actuator/health/**",
+            "/actuator/prometheus"
+    };
+
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
@@ -64,6 +78,9 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        .requestMatchers(PUBLIC_OPERATIONAL_PATHS).permitAll()
+                        .requestMatchers("/actuator/**")
+                                .hasAuthority(properties.adminAuthority())
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(

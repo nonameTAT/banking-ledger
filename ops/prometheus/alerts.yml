@@ -1,0 +1,69 @@
+groups:
+  - name: banking-ledger
+    rules:
+      # Some rejections are the system working: a withdrawal beyond the balance
+      # is an INVALID_REQUEST and should not page anyone. This watches the rate
+      # instead, so an alert means failures are arriving steadily rather than a
+      # customer mistyping an amount.
+      - alert: BankingTransactionErrors
+        expr: sum(rate(banking_transaction_errors_total[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Money movement is failing repeatedly
+          description: >-
+            Transaction errors have averaged more than 0.2/s for ten minutes.
+            Break down banking_transaction_errors_total by reason to see
+            whether this is one error code or several.
+
+      # The datastore failing is never routine, so this is deliberately far more
+      # sensitive than the transaction error rule above.
+      - alert: BankingDatabaseFailures
+        expr: sum(increase(banking_database_failures_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: The ledger database is failing requests
+          description: >-
+            Requests are failing on datastore errors rather than on anything the
+            caller asked for. Check database availability, connection pool
+            saturation, and lock contention.
+
+      # Stored balances disagreeing with the entries behind them can only come
+      # from a defect, so a single account is enough to alarm.
+      - alert: BankingReconciliationDifferences
+        expr: banking_reconciliation_differences > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Account balances disagree with the ledger
+          description: >-
+            The last reconciliation run found accounts whose balance does not
+            match their ledger entries. Query /api/reconciliation/differences
+            for the affected accounts. Do not correct balances by hand; entries
+            are the source of truth.
+
+      # The three rules above all go quiet if reconciliation simply stops, so
+      # this one watches that the check itself is still running.
+      - alert: BankingReconciliationStalled
+        expr: sum(increase(banking_reconciliation_runs_total[30m])) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Reconciliation has stopped running
+          description: >-
+            No reconciliation run has completed in the last 30 minutes, so the
+            ledger is no longer being checked against itself.
+
+      - alert: BankingLedgerDown
+        expr: up{job="banking-ledger"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The banking ledger is not being scraped
+          description: Prometheus cannot reach the application's metrics endpoint.
