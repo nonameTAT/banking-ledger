@@ -23,4 +23,25 @@ public enum BusinessErrorCode {
     public HttpStatus status() {
         return status;
     }
+
+    /**
+     * Whether this code means money movement failed, as opposed to a caller
+     * being turned away or the datastore being unwell.
+     *
+     * <p>Used both to decide what to count and to pre-register the counters at
+     * startup, so the two can never disagree about which codes exist.
+     */
+    public boolean isLedgerFailure() {
+        return switch (this) {
+            // Refusals are the authorization layer working, not the ledger
+            // failing, and counting them would bury real faults.
+            case UNAUTHENTICATED, ACCESS_DENIED -> false;
+
+            // Counted as a database failure instead, so one outage does not
+            // register twice under two different names.
+            case DATABASE_UNAVAILABLE -> false;
+
+            default -> true;
+        };
+    }
 }

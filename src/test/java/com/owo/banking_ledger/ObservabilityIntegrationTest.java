@@ -149,6 +149,30 @@ class ObservabilityIntegrationTest {
         assertEquals(before, counterTotal(LedgerMetrics.TRANSACTION_ERRORS), 0.0001);
     }
 
+    /**
+     * The scrape must already carry these series, at zero, before anything has
+     * gone wrong. An alert on the first database failure depends on it: with no
+     * earlier sample, increase() cannot see the step up to one.
+     */
+    @Test
+    void failureSeriesAreScrapableAtZeroBeforeAnyFailure() throws Exception {
+        String scrape = mockMvc.perform(get("/actuator/prometheus"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertTrue(
+                scrape.contains("banking_database_failures_total{reason=\"connection\"}"),
+                "the database failure series must exist before a failure happens");
+        assertTrue(
+                scrape.contains("banking_reconciliation_failures_total"),
+                "the reconciliation failure series must exist before a failure happens");
+        assertTrue(
+                scrape.contains("banking_reconciliation_last_success_timestamp"),
+                "the last-success gauge must always be published");
+    }
+
     @Test
     void metricsAreExposedForScraping() throws Exception {
         // Produce at least one error so the counter exists in the registry.
