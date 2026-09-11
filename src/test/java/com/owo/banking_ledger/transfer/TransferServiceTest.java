@@ -35,9 +35,12 @@ import com.owo.banking_ledger.ledger.LedgerTransaction;
 import com.owo.banking_ledger.ledger.LedgerTransactionRepository;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @ExtendWith(MockitoExtension.class)
 class TransferServiceTest {
+
+    private static final String OWNER_SUBJECT = "owner-subject";
 
     @Mock
     private AccountRepository accountRepository;
@@ -53,6 +56,9 @@ class TransferServiceTest {
 
     @Mock
     private IdempotencyService idempotencyService;
+
+    @Mock
+    private AccountAccessPolicy accessPolicy;
 
     @InjectMocks
     private TransferService transferService;
@@ -270,7 +276,7 @@ class TransferServiceTest {
     }
 
     private static Account customerAccount(Long id, String ownerName, String currency) {
-        Account account = new Account("CUSTOMER-" + id, ownerName, currency);
+        Account account = new Account("CUSTOMER-" + id, ownerName, currency, OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", id);
         return account;
     }

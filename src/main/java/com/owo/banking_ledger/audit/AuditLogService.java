@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.account.AccountRepository;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 import com.owo.banking_ledger.ledger.LedgerTransaction;
 
 @Service
@@ -16,12 +17,15 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final AccountRepository accountRepository;
+    private final AccountAccessPolicy accessPolicy;
 
     public AuditLogService(
             AuditLogRepository auditLogRepository,
-            AccountRepository accountRepository) {
+            AccountRepository accountRepository,
+            AccountAccessPolicy accessPolicy) {
         this.auditLogRepository = auditLogRepository;
         this.accountRepository = accountRepository;
+        this.accessPolicy = accessPolicy;
     }
 
     public void recordAccountEvent(
@@ -67,6 +71,8 @@ public class AuditLogService {
         if (!accountRepository.existsById(accountId)) {
             throw new AccountNotFoundException(accountId);
         }
+
+        accessPolicy.requireAccountAccess(accountId);
 
         return auditLogRepository
                 .findByAccountIdOrRelatedAccountIdOrderByCreatedAtDesc(

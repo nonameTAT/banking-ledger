@@ -35,9 +35,12 @@ import com.owo.banking_ledger.ledger.LedgerTransaction;
 import com.owo.banking_ledger.ledger.LedgerTransactionRepository;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @ExtendWith(MockitoExtension.class)
 class WithdrawalServiceTest {
+
+    private static final String OWNER_SUBJECT = "owner-subject";
 
     @Mock
     private AccountRepository accountRepository;
@@ -53,6 +56,9 @@ class WithdrawalServiceTest {
 
     @Mock
     private IdempotencyService idempotencyService;
+
+    @Mock
+    private AccountAccessPolicy accessPolicy;
 
     @InjectMocks
     private WithdrawalService withdrawalService;
@@ -205,13 +211,13 @@ class WithdrawalServiceTest {
     }
 
     private static Account customerAccount(Long id, String ownerName, String currency) {
-        Account account = new Account("CUSTOMER-" + id, ownerName, currency);
+        Account account = new Account("CUSTOMER-" + id, ownerName, currency, OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", id);
         return account;
     }
 
     private static Account systemCashAccount(BigDecimal balance) {
-        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD");
+        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD", null);
         ReflectionTestUtils.setField(account, "id", 1L);
         ReflectionTestUtils.setField(account, "accountKind", AccountKind.SYSTEM);
         ReflectionTestUtils.setField(account, "accountCategory", AccountCategory.ASSET);

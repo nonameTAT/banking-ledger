@@ -37,9 +37,12 @@ import com.owo.banking_ledger.ledger.ReversalNotAllowedException;
 import com.owo.banking_ledger.ledger.TransactionNotFoundException;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 import com.owo.banking_ledger.ledger.TransactionType;
+import com.owo.banking_ledger.security.AccountAccessPolicy;
 
 @ExtendWith(MockitoExtension.class)
 class ReversalServiceTest {
+
+    private static final String OWNER_SUBJECT = "owner-subject";
 
     @Mock
     private AccountRepository accountRepository;
@@ -55,6 +58,9 @@ class ReversalServiceTest {
 
     @Mock
     private IdempotencyService idempotencyService;
+
+    @Mock
+    private AccountAccessPolicy accessPolicy;
 
     @InjectMocks
     private ReversalService reversalService;
@@ -261,14 +267,14 @@ class ReversalServiceTest {
     }
 
     private static Account customerAccount(Long id, BigDecimal balance) {
-        Account account = new Account("CUSTOMER-" + id, "Alice", "AUD");
+        Account account = new Account("CUSTOMER-" + id, "Alice", "AUD", OWNER_SUBJECT);
         ReflectionTestUtils.setField(account, "id", id);
         ReflectionTestUtils.setField(account, "balance", balance);
         return account;
     }
 
     private static Account systemCashAccount(BigDecimal balance) {
-        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD");
+        Account account = new Account("SYSTEM-CASH-AUD", "Bank System", "AUD", null);
         ReflectionTestUtils.setField(account, "id", 1L);
         ReflectionTestUtils.setField(account, "accountKind", AccountKind.SYSTEM);
         ReflectionTestUtils.setField(
