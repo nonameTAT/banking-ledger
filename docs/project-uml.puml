@@ -44,8 +44,14 @@ package "com.owo.banking_ledger.account" as account {
     LIABILITY
   }
 
+  interface AccountOwnership <<projection>> {
+    + getId()
+    + getOwnerSubject()
+  }
+
   interface AccountRepository <<repository>> {
     + existsByAccountNumber(String accountNumber)
+    + findOwnershipById(Long id)
     + existsByAccountNumberAndAccountKind(String accountNumber, AccountKind kind)
     + findByAccountNumber(String accountNumber)
     + findByIdForUpdate(Long id)
@@ -614,6 +620,8 @@ AuthenticatedCaller --> BankingSecurityProperties
 AccountAccessPolicy --> AuthenticatedCaller
 AccountAccessPolicy --> AccountRepository
 AccountAccessPolicy ..> Account
+AccountAccessPolicy ..> AccountOwnership
+AccountRepository ..> AccountOwnership
 AccountAccessPolicy ..> BusinessException
 ApiSecurityErrorWriter ..> ErrorResponse
 

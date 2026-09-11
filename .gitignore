@@ -40,3 +40,4 @@ application-local.yml
 
 *.log
 .DS_Store
+backups/

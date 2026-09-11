@@ -41,7 +41,11 @@ class ReconciliationRunner {
         this.currentTrace = currentTrace;
     }
 
-    @Transactional
+    /**
+     * Allowed longer than a request transaction: this scans every account,
+     * while the default timeout is sized for a single customer's operation.
+     */
+    @Transactional(timeoutString = "${banking.reconciliation.transaction-timeout:60}")
     ReconciliationOutcome execute() {
         Instant startedAt = Instant.now();
         List<AccountBalanceComparison> comparisons =
