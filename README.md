@@ -4,7 +4,7 @@
 
 A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
 
-## Reports
+## Result Reports Of The Project
 
 - **[Capacity report](docs/capacity-report.md)** — measured throughput and latency, and where the ceiling comes from.
 - **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)** — 30.74% of requests failed, and not from load.
