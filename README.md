@@ -434,6 +434,15 @@ timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
 | Query overruns its timeout | Cut off, counted as `timeout` | `FailureHandlingIntegrationTest` |
 | Deadlock | PostgreSQL kills one side; the victim is counted as datastore trouble | `FailureHandlingIntegrationTest` |
 | Opposing transfers | Do not deadlock, because transfers always lock the lower account id first | `FailureHandlingIntegrationTest` |
+| A deposit or transfer that fails mid-request | `503 DATABASE_UNAVAILABLE` with a trace id; balances, entries and the audit row all roll back; the caller's retry posts exactly once | `RequestFailureIntegrationTest` |
+
+The last row is the one that matters to a caller, and it is a separate claim from
+the rows above it. Those drive the datastore directly and establish that
+PostgreSQL reports trouble and that the trouble arrives classified.
+`RequestFailureIntegrationTest` posts to the real endpoints with a failure
+injected into the table the service is about to write, and checks the response,
+the rollback and the retry together — because a service that classifies a
+deadlock perfectly and still leaves half a posting behind has not handled it.
 
 A known gap: when a transaction fails **and** its rollback fails too, Spring
 replaces the original exception with the rollback's and logs "Application
@@ -445,16 +454,26 @@ from an exception that no longer contains it.
 
 ### Capacity
 
-Throughput peaks near **790 requests per second at about 25 concurrent
-clients**, with p95 around 103 ms and no failures. Past that, throughput stops
-rising and latency grows in proportion to the load added: the queue grows, the
-work does not.
+Throughput is flat at **roughly 700–800 requests per second from 5 concurrent
+clients to 100**, with no failures at any level. Latency, meanwhile, rises in
+proportion to the clients added — a median of 6 ms at 5 becomes 109 ms at 100.
+Work in equals work out and everything extra is spent waiting, so the write path
+is already saturated at 5 concurrent writers and sizing above that buys latency,
+not throughput.
 
 The limit is the write path. Every deposit and withdrawal posts against the
 single `SYSTEM-CASH-AUD` account and takes a row lock on it, which serialises
-cash movement service-wide. The same shape without writes sustains 1,304 req/s
-at half the latency. See the [capacity report](docs/capacity-report.md) for the
-full table and the fix it prompted.
+cash movement service-wide. The same shape without writes sustains around 8x the
+throughput.
+
+Two things the report is careful about, because both were got wrong first time:
+only the steady-state hold window is measured, not the whole run including the
+ramp; and throughput varies by up to 15% between identical runs on this host, so
+it is a band rather than a figure. See the
+[capacity report](docs/capacity-report.md) for the full tables, the method, and
+the two defects this work uncovered — an optimistic-locking failure under
+contention, and a paginated read whose cost grows without bound as an account
+accumulates history.
 
 ### Backup and restore
 
@@ -463,11 +482,21 @@ scripts/backup.sh                      # prints the path it wrote
 scripts/restore.sh backups/<file>.dump # replaces the live database
 ```
 
-A rehearsed restore took 12 seconds and lost every transaction posted after the
-backup was taken. The restored ledger reconciles cleanly, which is exactly why
-the loss is dangerous: nothing detects it afterwards. See the
+Neither script destroys anything it has not first checked. `backup.sh` writes to
+a `.partial` file, reads the archive back to confirm it holds the ledger tables,
+and only then renames it — so a file named like a backup is one that was read
+back successfully. `restore.sh` checks the dump, restores it into a staging
+database, and verifies that every balance there matches the entries behind it,
+all while the application keeps serving; only then does it stop the application
+and swap the two databases by rename. The database being replaced is renamed
+aside rather than dropped, so a restore of the wrong dump is still reversible.
+
+A rehearsed restore took 12 seconds, of which the database was unavailable for
+about one, and lost every transaction posted after the backup was taken. The
+restored ledger reconciles cleanly, which is exactly why the loss is dangerous:
+nothing detects it afterwards. See the
 [recovery rehearsal](docs/recovery-rehearsal.md) for the limits this
-demonstrates.
+demonstrates, and for what happens to a dump that is no good.
 
 ## API
 
@@ -768,6 +797,9 @@ The test suite includes:
   deadlocks, and contention on the account owner's own path
 - Outage tests that stop a database and assert failures are bounded and
   recognisable
+- Request failure tests that inject a database fault into a real deposit or
+  transfer and assert the response, the full rollback, and that the caller's
+  retry posts exactly once
 
 Run all tests:
 
@@ -785,6 +817,9 @@ Run selected tests:
 ./mvnw -Dtest=IdempotencyIntegrationTest test
 ./mvnw -Dtest=LedgerAppendOnlyIntegrationTest test
 ./mvnw -Dtest=ReversalIntegrationTest test
+./mvnw -Dtest=FailureHandlingIntegrationTest test
+./mvnw -Dtest=RequestFailureIntegrationTest test
+./mvnw -Dtest=DatabaseOutageTest test
 ```
 
 ## Notes
