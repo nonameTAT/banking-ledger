@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +32,10 @@ import com.owo.banking_ledger.deposit.DepositService;
 import com.owo.banking_ledger.observability.DatabaseFailure;
 import com.owo.banking_ledger.transfer.TransferRequest;
 import com.owo.banking_ledger.transfer.TransferService;
+import com.zaxxer.hikari.HikariDataSource;
+
+import javax.sql.DataSource;
+import java.sql.SQLException;
 
 /**
  * Checks what the service does when the database misbehaves rather than when a
@@ -40,10 +45,18 @@ import com.owo.banking_ledger.transfer.TransferService;
  * the behaviour under test belongs to the driver, the pool and the database
  * between them, and a mock would only assert what this test already assumed.
  */
-@SpringBootTest
+@SpringBootTest(properties =
+        "spring.datasource.hikari.data-source-properties.ApplicationName="
+                + FailureHandlingIntegrationTest.POOL)
 @Import(TestcontainersConfiguration.class)
 @WithMockUser(username = "failure-tests", authorities = "SCOPE_ledger:admin")
 class FailureHandlingIntegrationTest {
+
+    /**
+     * Tags every connection this context opens, so that the kill below can find
+     * this pool's connections and only this pool's.
+     */
+    static final String POOL = "failure-handling-tests";
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -62,6 +75,32 @@ class FailureHandlingIntegrationTest {
 
     @Autowired
     private AccountRepository accountRepository;
+
+    @Autowired
+    private DataSource dataSource;
+
+    /**
+     * Throws away whatever the test left in the pool.
+     *
+     * <p>Killing this pool's connections leaves the other nineteen of them dead
+     * in the pool, not just the one the recovering test goes on to replace.
+     * Hikari skips its aliveness check for a connection borrowed again within
+     * half a second of being returned, so the next test to take several
+     * connections at once takes dead ones, and fails when the transaction it
+     * has already begun cannot be rolled back. That test then reads as a
+     * contention or idempotency bug in a class that never touched a connection.
+     *
+     * <p>This runs after every test rather than only the killing ones: the
+     * assertion that the pool recovers has already been made by the time it
+     * runs, so evicting here weakens nothing, and a test added later that kills
+     * connections is covered without having to remember this.
+     */
+    @AfterEach
+    void discardConnectionsThisTestMayHaveKilled() throws SQLException {
+        dataSource.unwrap(HikariDataSource.class)
+                .getHikariPoolMXBean()
+                .softEvictConnections();
+    }
 
     // ----------------------------------------------------------- timeouts ---
 
@@ -386,16 +425,35 @@ class FailureHandlingIntegrationTest {
     }
 
     /**
-     * Kills every other connection to this database, which is what the pool
-     * sees when a database restarts or a failover happens.
+     * Kills this pool's other connections, which is what the pool sees when a
+     * database restarts or a failover happens.
+     *
+     * <p>Scoped to this context's own connections by {@code application_name},
+     * and that scope is the whole point. The Testcontainers database is shared
+     * with every other test class, and a class configured differently enough to
+     * get its own Spring context gets its own pool against that same database.
+     * An unscoped {@code pg_terminate_backend} reaches into those pools too, and
+     * the test that fails is whichever one next borrows a connection that was
+     * killed underneath it — a contention or idempotency test, in another class,
+     * with nothing wrong with it.
      */
     private void terminateOtherBackends() {
-        jdbcTemplate.execute("""
+        // If the tag were ever to stop being applied, the statement below would
+        // match nothing and quietly stop testing anything at all.
+        assertEquals(
+                POOL,
+                jdbcTemplate.queryForObject(
+                        "SELECT current_setting('application_name')",
+                        String.class),
+                "this pool's connections must be tagged for the kill to find them");
+
+        jdbcTemplate.queryForList("""
                 SELECT pg_terminate_backend(pid)
                 FROM pg_stat_activity
                 WHERE datname = current_database()
                     AND pid <> pg_backend_pid()
-                """);
+                    AND application_name = ?
+                """, Boolean.class, POOL);
     }
 
     /**
