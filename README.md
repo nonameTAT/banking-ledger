@@ -2,6 +2,33 @@
 
 A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
 
+## What to read first
+
+The parts of this project that were measured rather than assumed, and the
+reason it is worth more than its feature list:
+
+- **[Capacity report](docs/capacity-report.md)** — what the service actually
+  sustains, under a method that is careful about two things it got wrong the
+  first time. A throughput figure taken from the whole run is an average over
+  the ramp rather than the rate at the target concurrency, so only the
+  steady-state hold window is reported; and throughput on this host varies by
+  up to 15% between identical runs, so it is given as a band rather than a
+  number. An earlier version of the report named a peak that was inside the
+  noise.
+- **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)**
+  — the first run failed 30.74% of requests, and not because of load. The
+  ownership check added for authentication loaded the account entity before the
+  balance-changing code took its pessimistic lock, so Hibernate served a stale
+  `@Version` to the locking read. It had been invisible because every
+  concurrency test in the suite ran as an administrator, and an administrator
+  skips the ownership check entirely — the contended customer path had never
+  been exercised.
+- **[Recovery rehearsal](docs/recovery-rehearsal.md)** — a real restore, what it
+  cost, and five kinds of bad dump now refused before the live database is
+  touched. The last one is the one worth having: a valid archive of the right
+  schema that restored without error and was still not fit to serve, because
+  the balances in it did not agree with the entries behind them.
+
 ## Tech Stack
 
 - Java 25
@@ -87,14 +114,17 @@ a reversal, never by editing history.
 
 ```text
 src/main/java/com/owo/banking_ledger
-├── account # Account entity, repository, service, controller
-├── deposit # Deposit API and business logic
-├── withdrawal # Withdrawal API and business logic
-├── transfer # Transfer API and business logic
-├── reversal # Reversal API and business logic
-├── audit # Audit log entity, service, and query API
-├── ledger # Ledger transaction/entry entities and query API
-└── common # Global exception handling
+├── account         # Account entity, repository, service, controller
+├── deposit         # Deposit API and business logic
+├── withdrawal      # Withdrawal API and business logic
+├── transfer        # Transfer API and business logic
+├── reversal        # Reversal API and business logic
+├── audit           # Audit log entity, service, and query API
+├── ledger          # Ledger transaction/entry entities and query API
+├── reconciliation  # Scheduled balance-vs-entries check and its query API
+├── security        # Authentication, account ownership, admin permission
+├── observability   # Trace ids, metrics, database failure classification
+└── common          # Global exception handling
 
 src/main/resources/db/migration
 ├── V1__create_accounts.sql
@@ -102,7 +132,16 @@ src/main/resources/db/migration
 ├── V3__create_audit_logs.sql
 ├── V4__add_transaction_request_hash.sql
 ├── V5__ledger_entries_append_only.sql
-└── V6__add_transaction_reversal.sql
+├── V6__add_transaction_reversal.sql
+├── V7__add_account_owner_subject.sql
+└── V8__add_reconciliation_records.sql
+
+ops
+├── load            # k6 load test scripts, and the phase tagging they share
+└── prometheus      # Scrape config and alert rules
+
+scripts             # backup.sh, restore.sh, and a dev token signer
+docs                # Capacity report, recovery rehearsal, UML
 ```
 
 ## UML
