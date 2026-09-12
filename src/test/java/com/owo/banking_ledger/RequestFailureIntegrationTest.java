@@ -1,7 +1,10 @@
 package com.owo.banking_ledger;
 
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.util.UUID;
+
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,6 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.owo.banking_ledger.observability.LedgerMetrics;
+
+import com.zaxxer.hikari.HikariDataSource;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.search.Search;
@@ -63,10 +68,18 @@ import io.micrometer.core.instrument.search.Search;
  * deadlock to land inside a chosen statement is not something a test can do
  * reliably, and injecting it is what makes the assertions above deterministic.
  */
-@SpringBootTest
+@SpringBootTest(properties =
+        "spring.datasource.hikari.data-source-properties.ApplicationName="
+                + RequestFailureIntegrationTest.POOL)
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class RequestFailureIntegrationTest {
+
+    /**
+     * Tags every connection this context opens, so that the kill below can find
+     * this pool's connections and only this pool's.
+     */
+    static final String POOL = "request-failure-tests";
 
     /** PostgreSQL's deadlock_detected: what a broken lock cycle reports. */
     private static final String DEADLOCK = "40P01";
@@ -90,9 +103,28 @@ class RequestFailureIntegrationTest {
     @Autowired
     private MeterRegistry meterRegistry;
 
+    @Autowired
+    private DataSource dataSource;
+
     @AfterEach
     void removeInjectedFailures() {
         clearInjectedFailure();
+    }
+
+    /**
+     * Throws away whatever the test left in the pool.
+     *
+     * <p>Killing this pool's connections leaves the rest of them dead in the
+     * pool, and Hikari skips its aliveness check for a connection borrowed again
+     * within half a second of being returned — so the next test to take several
+     * at once takes dead ones and fails for reasons of its own that are not its
+     * own. See the same method on {@link FailureHandlingIntegrationTest}.
+     */
+    @AfterEach
+    void discardConnectionsThisTestMayHaveKilled() throws SQLException {
+        dataSource.unwrap(HikariDataSource.class)
+                .getHikariPoolMXBean()
+                .softEvictConnections();
     }
 
     // ------------------------------------------------------- the response ---
@@ -448,26 +480,37 @@ class RequestFailureIntegrationTest {
     }
 
     /**
-     * Kills every pooled connection to this database except the one issuing the
-     * statement, which is what the pool sees when the database restarts or fails
-     * over.
+     * Kills this pool's connections except the one issuing the statement, which
+     * is what the pool sees when the database restarts or fails over.
      *
      * <p>Deliberately not its own connection as well. The pool is shared with
      * every other test in this context, and leaving it with nothing live to hand
      * out makes the next class to ask for a connection fail for reasons that
      * have nothing to do with it.
+     *
+     * <p>Scoped to this context's own connections by {@code application_name}
+     * for the same reason, one level out: the Testcontainers database is shared
+     * with every other test class, and a class that gets its own Spring context
+     * gets its own pool against that same database. Unscoped, this reaches into
+     * those pools too.
      */
     private void terminateOtherBackends() {
-        jdbcTemplate.execute("""
-                DO $$
-                BEGIN
-                    PERFORM pg_terminate_backend(pid)
-                    FROM pg_stat_activity
-                    WHERE datname = current_database()
-                        AND pid <> pg_backend_pid();
-                END
-                $$
-                """);
+        // If the tag were ever to stop being applied, the statement below would
+        // match nothing and quietly stop testing anything at all.
+        assertEquals(
+                POOL,
+                jdbcTemplate.queryForObject(
+                        "SELECT current_setting('application_name')",
+                        String.class),
+                "this pool's connections must be tagged for the kill to find them");
+
+        jdbcTemplate.queryForList("""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = current_database()
+                    AND pid <> pg_backend_pid()
+                    AND application_name = ?
+                """, Boolean.class, POOL);
     }
 
     // ------------------------------------------------------- observations ---
