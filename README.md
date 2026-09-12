@@ -4,32 +4,11 @@
 
 A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
 
-## What to read first
+## Reports
 
-The parts of this project that were measured rather than assumed, and the
-reason it is worth more than its feature list:
-
-- **[Capacity report](docs/capacity-report.md)** — what the service actually
-  sustains, under a method that is careful about two things it got wrong the
-  first time. A throughput figure taken from the whole run is an average over
-  the ramp rather than the rate at the target concurrency, so only the
-  steady-state hold window is reported; and throughput on this host varies by
-  up to 15% between identical runs, so it is given as a band rather than a
-  number. An earlier version of the report named a peak that was inside the
-  noise.
-- **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)**
-  — the first run failed 30.74% of requests, and not because of load. The
-  ownership check added for authentication loaded the account entity before the
-  balance-changing code took its pessimistic lock, so Hibernate served a stale
-  `@Version` to the locking read. It had been invisible because every
-  concurrency test in the suite ran as an administrator, and an administrator
-  skips the ownership check entirely — the contended customer path had never
-  been exercised.
-- **[Recovery rehearsal](docs/recovery-rehearsal.md)** — a real restore, what it
-  cost, and five kinds of bad dump now refused before the live database is
-  touched. The last one is the one worth having: a valid archive of the right
-  schema that restored without error and was still not fit to serve, because
-  the balances in it did not agree with the entries behind them.
+- **[Capacity report](docs/capacity-report.md)** — measured throughput and latency, and where the ceiling comes from.
+- **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)** — 30.74% of requests failed, and not from load.
+- **[Recovery rehearsal](docs/recovery-rehearsal.md)** — a real restore, what it cost, and the bad dumps now refused.
 
 ## Tech Stack
 
@@ -48,28 +27,33 @@ reason it is worth more than its feature list:
 - Testcontainers
 - GitHub Actions
 
-## Core Features
+## Features
 
-- Trace id on every request, its log lines, and its error responses
-- Metrics and alert rules for transaction errors, database failures, and
-  reconciliation differences
-- Scheduled ledger reconciliation with queryable results
-- Bounded timeouts, with verified behaviour under outages, timeouts, and deadlocks
-- Load-tested capacity figures and a rehearsed backup and restore
-- Bearer-token authentication on every API request
-- Account-level authorization, with a separate administrative permission
-- Create and fetch customer accounts
-- Freeze and unfreeze customer accounts
-- Deposit money into customer accounts
-- Withdraw money from customer accounts
-- Transfer money between customer accounts
-- Query paginated ledger entries for an account
-- Query paginated audit logs for an account
+### User features
+
+- Create, fetch, freeze, and unfreeze customer accounts
+- Deposit, withdraw, and transfer money between customer accounts
 - Reverse a posted transaction with a linked correcting transaction
-- Idempotent replay through unique `referenceId`
-- Pessimistic account locking for balance-changing operations
+- Query paginated ledger entries and audit logs for an account
+- Replay a `referenceId` safely: the original transaction comes back instead of
+  posting twice
+- Scheduled reconciliation of balances against ledger entries, with queryable
+  results
+- Bearer-token authentication, with each caller reaching only its own accounts
+  and a separate administrative permission
+
+### Engineering feature
+
+- Pessimistic row locking on every balance-changing operation
+- Append-only ledger entries, enforced by a database trigger
+- Trace id on every request, its log lines, and its error responses
+- Metrics and Prometheus alert rules for transaction errors, database failures,
+  and reconciliation differences
+- Bounded timeouts, with verified behaviour under outages, timeouts, and
+  deadlocks
 - Global exception handling with structured JSON errors
-- Integration and concurrency tests
+- Integration and concurrency tests on Testcontainers
+- Load-tested capacity figures and a rehearsed backup and restore
 
 ## Accounting Model
 
@@ -469,14 +453,14 @@ timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
 
 ### What failure looks like
 
-| Failure | Behaviour | Verified by |
-| --- | --- | --- |
-| Database unreachable | `503 DATABASE_UNAVAILABLE`, counted as `connection`, bounded by the connection timeout | `DatabaseOutageTest` |
-| Connections killed underneath the pool | The next request succeeds; the pool replaces them | `FailureHandlingIntegrationTest` |
-| Query overruns its timeout | Cut off, counted as `timeout` | `FailureHandlingIntegrationTest` |
-| Deadlock | PostgreSQL kills one side; the victim is counted as datastore trouble | `FailureHandlingIntegrationTest` |
-| Opposing transfers | Do not deadlock, because transfers always lock the lower account id first | `FailureHandlingIntegrationTest` |
-| A deposit or transfer that fails mid-request | `503 DATABASE_UNAVAILABLE` with a trace id; balances, entries and the audit row all roll back; the caller's retry posts exactly once | `RequestFailureIntegrationTest` |
+| Failure                                      | Behaviour                                                                                                                            | Verified by                      |
+| ----------------------------------------------| --------------------------------------------------------------------------------------------------------------------------------------| ----------------------------------|
+| Database unreachable                         | `503 DATABASE_UNAVAILABLE`, counted as `connection`, bounded by the connection timeout                                               | `DatabaseOutageTest`             |
+| Connections killed underneath the pool       | The next request succeeds; the pool replaces them                                                                                    | `FailureHandlingIntegrationTest` |
+| Query overruns its timeout                   | Cut off, counted as `timeout`                                                                                                        | `FailureHandlingIntegrationTest` |
+| Deadlock                                     | PostgreSQL kills one side; the victim is counted as datastore trouble                                                                | `FailureHandlingIntegrationTest` |
+| Opposing transfers                           | Do not deadlock, because transfers always lock the lower account id first                                                            | `FailureHandlingIntegrationTest` |
+| A deposit or transfer that fails mid-request | `503 DATABASE_UNAVAILABLE` with a trace id; balances, entries and the audit row all roll back; the caller's retry posts exactly once | `RequestFailureIntegrationTest`  |
 
 The last row is the one that matters to a caller, and it is a separate claim from
 the rows above it. Those drive the datastore directly and establish that
