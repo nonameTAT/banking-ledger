@@ -141,7 +141,8 @@ ops
 └── prometheus      # Scrape config and alert rules
 
 scripts             # backup.sh, restore.sh, and a dev token signer
-docs                # Capacity report, recovery rehearsal, UML
+docs                # Capacity report, recovery rehearsal, API reference, UML
+└── charts          # Capacity figures, and the script that regenerates them
 ```
 
 ## UML
@@ -499,6 +500,11 @@ proportion to the clients added — a median of 6 ms at 5 becomes 109 ms at 100.
 Work in equals work out and everything extra is spent waiting, so the write path
 is already saturated at 5 concurrent writers and sizing above that buys latency,
 not throughput.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/charts/capacity-saturation-dark.svg">
+  <img alt="Two panels over the same concurrency axis. Throughput stays within a band of roughly 700 to 800 requests per second from 5 to 100 concurrent clients, with both passes plotted as separate dots. Below it, median, p95 and p99 latency each rise in proportion to the clients added." src="docs/charts/capacity-saturation-light.svg">
+</picture>
 
 The limit is the write path. Every deposit and withdrawal posts against the
 single `SYSTEM-CASH-AUD` account and takes a row lock on it, which serialises
