@@ -1,5 +1,7 @@
 # Banking Ledger
 
+[![CI](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-25-blue) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+
 A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
 
 ## What to read first
