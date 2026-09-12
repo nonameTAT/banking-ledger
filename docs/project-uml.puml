@@ -389,7 +389,7 @@ package "com.owo.banking_ledger.common" as common {
   class GlobalExceptionHandler <<advice>> {
     + handleBusinessException(BusinessException exception)
     + handleDataIntegrityViolation(DataIntegrityViolationException exception)
-    + handleDataAccessFailure(DataAccessException exception)
+    + handleDatastoreFailure(RuntimeException exception)
     + handleValidation(MethodArgumentNotValidException exception)
     + handleIllegalArgument(IllegalArgumentException exception)
     + handleIllegalState(IllegalStateException exception)
@@ -408,10 +408,21 @@ package "com.owo.banking_ledger.observability" as observability {
   }
 
   class LedgerMetrics <<component>> {
-    + recordTransactionError(String reason)
-    + recordDatabaseFailure(String reason)
+    + recordTransactionError(BusinessErrorCode code)
+    + recordDatabaseFailure(DatabaseFailure failure)
     + recordReconciliationRun(int differenceCount)
+    + recordReconciliationFailure(DatabaseFailure cause)
     + currentDifferences()
+    + lastSuccessEpochSeconds()
+  }
+
+  enum DatabaseFailure {
+    CONNECTION
+    TIMEOUT
+    LOCK
+    OTHER
+    + {static} classify(Throwable throwable)
+    + tagValue()
   }
 }
 
@@ -595,6 +606,9 @@ TraceIdResponseFilter --> CurrentTrace
 CurrentTrace ..> ErrorResponse
 GlobalExceptionHandler --> CurrentTrace
 GlobalExceptionHandler --> LedgerMetrics
+GlobalExceptionHandler ..> DatabaseFailure
+LedgerMetrics ..> DatabaseFailure
+LedgerMetrics ..> BusinessErrorCode
 ApiSecurityErrorWriter --> CurrentTrace
 
 ReconciliationScheduler --> ReconciliationService
@@ -605,6 +619,7 @@ ReconciliationService --> ReconciliationRunner
 ReconciliationService --> ReconciliationRunRepository
 ReconciliationService --> ReconciliationDifferenceRepository
 ReconciliationService --> LedgerMetrics
+ReconciliationService ..> DatabaseFailure
 ReconciliationService ..> ReconciliationOutcome
 ReconciliationRunner --> ReconciliationRepository
 ReconciliationRunner --> ReconciliationRunRepository

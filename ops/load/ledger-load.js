@@ -2,13 +2,31 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { Counter, Rate } from 'k6/metrics';
 
+import {
+    TREND_STATS,
+    steadyStateThresholds,
+    summarise,
+    windows,
+} from './phases.js';
+
 // Money movement is the expensive path: it takes row locks, writes a
 // transaction and two entries, and an audit row. Reads are included because a
 // real load is not all writes, but the mix is deliberately write-heavy so the
 // number this produces is the one that matters.
+//
+// The run climbs to the target concurrency, holds there, and winds down. Only
+// the hold window is a measurement; see phases.js for why, and read the
+// STEADY STATE block of the summary rather than the whole-run one.
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
 const TOKEN = __ENV.TOKEN;
 const ACCOUNTS = (__ENV.ACCOUNT_IDS || '').split(',').filter(Boolean);
+
+const VUS = Number(__ENV.VUS || 20);
+const WINDOW = windows({
+    rampUp: __ENV.RAMP_UP || '20s',
+    hold: __ENV.HOLD || '40s',
+    rampDown: __ENV.RAMP_DOWN || '10s',
+});
 
 const businessErrors = new Counter('business_errors');
 const conflicts = new Rate('conflict_rate');
@@ -19,27 +37,28 @@ export const options = {
             executor: 'ramping-vus',
             startVUs: 1,
             stages: [
-                { duration: __ENV.RAMP_UP || '20s', target: Number(__ENV.VUS || 20) },
-                { duration: __ENV.HOLD || '40s', target: Number(__ENV.VUS || 20) },
-                { duration: '10s', target: 0 },
+                { duration: WINDOW.rampUp, target: VUS },
+                { duration: WINDOW.hold, target: VUS },
+                { duration: WINDOW.rampDown, target: 0 },
             ],
         },
     },
+    summaryTrendStats: TREND_STATS,
     // A ledger that answers quickly but wrongly is worthless, so correctness is
     // a threshold alongside latency rather than something checked afterwards.
-    thresholds: {
-        http_req_failed: ['rate<0.01'],
-        http_req_duration: ['p(95)<1000'],
-        business_errors: ['count<1'],
-    },
+    // Latency is judged on the hold window; correctness on the whole run.
+    thresholds: steadyStateThresholds({ p95Milliseconds: 1000 }),
 };
 
-function headers() {
+function request() {
     return {
         headers: {
             Authorization: `Bearer ${TOKEN}`,
             'Content-Type': 'application/json',
         },
+        // Tagged at the moment of the request, which is what lets the summary
+        // separate the hold window from the ramp on either side of it.
+        tags: { phase: WINDOW.phase() },
     };
 }
 
@@ -62,7 +81,7 @@ export default function () {
             currency: 'AUD',
             referenceId: reference('dep'),
         }),
-        headers());
+        request());
 
     if (!check(deposit, { 'deposit created': (r) => r.status === 201 })) {
         businessErrors.add(1);
@@ -87,7 +106,7 @@ export default function () {
                 currency: 'AUD',
                 referenceId: reference('tr'),
             }),
-            headers());
+            request());
 
         // 400 is legitimate here: a transfer can outrun its account's balance.
         if (!check(transfer, {
@@ -98,11 +117,19 @@ export default function () {
     }
 
     // Read path, including the paginated ledger query.
-    const read = http.get(`${BASE}/api/accounts/${account}`, headers());
+    const read = http.get(`${BASE}/api/accounts/${account}`, request());
     check(read, { 'account read': (r) => r.status === 200 });
 
     const entries = http.get(
         `${BASE}/api/accounts/${account}/entries?size=20`,
-        headers());
+        request());
     check(entries, { 'entries read': (r) => r.status === 200 });
+}
+
+export function handleSummary(data) {
+    return summarise(data, {
+        label: 'ledger write mix',
+        vus: VUS,
+        window: WINDOW,
+    });
 }
