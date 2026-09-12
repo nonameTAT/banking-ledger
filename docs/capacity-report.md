@@ -37,6 +37,9 @@ The difference is not cosmetic. At 10 concurrent clients one run measured
 were 687 and 679. The whole-run figure moves with how long the ramp is, which is
 a property of the test rather than of the service.
 
+The figures below are generated from the tables in this document by
+`docs/charts/plot.py`, which needs no packages beyond the standard library.
+
 Three other things are held still, because each of them moves the result by more
 than the effect being measured:
 
@@ -71,6 +74,11 @@ Each cell is pass A / pass B; throughput in req/s, latency in ms.
 | 50  | 805 / 889  | 44.6 / 40.0   | 154.2 / 139.5 | 180.5 / 160.9 |
 | 100 | 732 / 762  | 111.0 / 107.5 | 232.3 / 223.1 | 296.5 / 295.4 |
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="charts/capacity-saturation-dark.svg">
+  <img alt="Two panels over the same concurrency axis. Throughput stays within a band of roughly 700 to 800 requests per second from 5 to 100 concurrent clients, with both passes plotted as separate dots. Below it, median, p95 and p99 latency each rise in proportion to the clients added." src="charts/capacity-saturation-light.svg">
+</picture>
+
 No request failed at any level, in either pass.
 
 **Throughput is flat at roughly 700–800 requests per second from 5 concurrent
@@ -104,6 +112,11 @@ same empty ledger:
 | Write mix | 805–889 req/s | 40–45 ms | 140–154 ms | 161–181 ms |
 | Reads only | 6,201–6,291 req/s | 6.6 ms | 13.3 ms | 17.8 ms |
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="charts/read-vs-write-dark.svg">
+  <img alt="At 50 concurrent clients the read-only shape sustains 6,201 to 6,291 requests per second against the write mix's 805 to 889, at a p95 latency of 13.3 milliseconds against 139.5 to 154.2." src="charts/read-vs-write-light.svg">
+</picture>
+
 Reads sustain around 8x the throughput at a sixth of the latency, so the limit
 is not CPU, the connection pool, or the network. It is the write path.
 
@@ -127,6 +140,11 @@ much history the accounts have:
 | 3,045 | 2,077 req/s | 20.6 ms | 45.3 ms |
 | 8,409 | 985 req/s | 44.3 ms | 95.6 ms |
 | 35,065 | 653 req/s | 67.8 ms | 143.2 ms |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="charts/read-throughput-vs-history-dark.svg">
+  <img alt="Four columns at 50 concurrent clients: 6,291 requests per second against an account with no history, 2,077 at 3,045 entries, 985 at 8,409, and 653 at 35,065." src="charts/read-throughput-vs-history-light.svg">
+</picture>
 
 **Throughput falls roughly in inverse proportion to the account's entry count.**
 A tenfold longer history costs about a tenfold drop, and at 35,000 entries the
