@@ -35,7 +35,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 
 ### User features
 
-- Create, fetch, freeze, and unfreeze customer accounts
+- Create, list, fetch, freeze, and unfreeze customer accounts
 - Deposit, withdraw, and transfer money between customer accounts
 - Reverse a posted transaction with a linked correcting transaction
 - Query paginated ledger entries and audit logs for an account
@@ -230,6 +230,7 @@ carries the `ledger:admin` scope.
 | Operation                       | Permitted caller                                  |
 | ------------------------------- | ------------------------------------------------- |
 | Create an account               | Any authenticated caller; it becomes the owner    |
+| List accounts                   | Own accounts; administrators see every account    |
 | Read an account                 | Owner or administrator                            |
 | Deposit, withdraw               | Owner or administrator                            |
 | Transfer                        | Owner of the **source** account, or administrator |
@@ -244,6 +245,11 @@ touched.
 
 A transfer is authorized against the account the money leaves, so holding the
 receiving account is not enough to pull funds out of someone else's.
+
+Listing follows the same rule. A customer's list holds their own accounts only,
+and naming another owner in `ownerSubject` is refused with `403` rather than
+answered with an empty page. Administrators can filter by owner and by account
+kind.
 
 Refused requests answer `401 UNAUTHENTICATED` or `403 ACCESS_DENIED` in the same
 JSON error shape as every other failure. A caller asking for an account it does
@@ -578,7 +584,7 @@ existed has no stored hash and cannot be verified, so retrying it returns
 
 ## Test Coverage
 
-173 tests across 36 files: service unit tests, a `@WebMvcTest` slice per
+184 tests across 36 files: service unit tests, a `@WebMvcTest` slice per
 controller, and integration tests against a throwaway Testcontainers PostgreSQL.
 The ones worth knowing about:
 

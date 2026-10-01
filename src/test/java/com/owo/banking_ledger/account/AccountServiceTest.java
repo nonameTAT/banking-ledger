@@ -11,14 +11,22 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.owo.banking_ledger.audit.AuditAction;
@@ -113,8 +121,59 @@ class AccountServiceTest {
         assertEquals("ABCDEF1234567890", response.accountNumber());
         assertEquals("Alice", response.ownerName());
         assertEquals("AUD", response.currency());
+        assertEquals(AccountKind.CUSTOMER, response.accountKind());
         assertEquals(AccountStatus.ACTIVE, response.status());
         assertEquals(BigDecimal.ZERO, response.balance());
+    }
+
+    @Test
+    void findAccountsPagesByIdWhateverSortWasRequested() {
+        Account account = new Account("ABCDEF1234567890", "Alice", "AUD", OWNER_SUBJECT);
+        ReflectionTestUtils.setField(account, "id", 2L);
+
+        when(accessPolicy.authorizeAccountListing(null)).thenReturn(OWNER_SUBJECT);
+        when(accountRepository.findAll(
+                ArgumentMatchers.<Specification<Account>>any(),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(account)));
+
+        Page<AccountResponse> page = accountService.findAccounts(
+                null,
+                null,
+                PageRequest.of(1, 5, Sort.by("balance").descending()));
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(accountRepository).findAll(
+                ArgumentMatchers.<Specification<Account>>any(),
+                pageableCaptor.capture());
+        Pageable pageable = pageableCaptor.getValue();
+
+        assertEquals(1, pageable.getPageNumber());
+        assertEquals(5, pageable.getPageSize());
+        assertEquals(Sort.by(Sort.Direction.ASC, "id"), pageable.getSort());
+        assertEquals(1, page.getTotalElements());
+        assertEquals(2L, page.getContent().get(0).id());
+        assertEquals(AccountKind.CUSTOMER, page.getContent().get(0).accountKind());
+    }
+
+    @Test
+    void findAccountsDoesNotQueryWhenListingIsDenied() {
+        when(accessPolicy.authorizeAccountListing("someone-else"))
+                .thenThrow(new BusinessException(
+                        BusinessErrorCode.ACCESS_DENIED,
+                        "Caller is not authorized to list accounts of another owner"));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> accountService.findAccounts(
+                        "someone-else",
+                        null,
+                        PageRequest.of(0, 20)));
+
+        assertEquals(BusinessErrorCode.ACCESS_DENIED, exception.getCode());
+        verify(accountRepository, never()).findAll(
+                ArgumentMatchers.<Specification<Account>>any(),
+                any(Pageable.class));
     }
 
     @Test
