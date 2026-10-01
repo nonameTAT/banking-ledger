@@ -9,6 +9,7 @@ import org.springframework.transaction.TransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import com.owo.banking_ledger.observability.CurrentTrace;
 import com.owo.banking_ledger.observability.DatabaseFailure;
@@ -102,6 +103,20 @@ public class GlobalExceptionHandler {
                 .orElse("Request validation failed");
 
         return respond(BusinessErrorCode.INVALID_REQUEST, message);
+    }
+
+    /**
+     * A path or query parameter that cannot be read as its declared type, such
+     * as an unknown {@code accountKind}. Left to Spring, it would still be a
+     * {@code 400}, but in Spring's error body rather than this API's.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(
+            MethodArgumentTypeMismatchException exception) {
+        return respond(
+                BusinessErrorCode.INVALID_REQUEST,
+                "Invalid value for " + exception.getName() + ": "
+                        + exception.getValue());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

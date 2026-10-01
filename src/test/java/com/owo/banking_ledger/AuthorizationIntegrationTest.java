@@ -4,6 +4,10 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +58,13 @@ class AuthorizationIntegrationTest {
     @Test
     void rejectsRequestsWithoutAToken() throws Exception {
         mockMvc.perform(get("/api/accounts/1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test
+    void rejectsAccountListingWithoutAToken() throws Exception {
+        mockMvc.perform(get("/api/accounts"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
@@ -181,6 +192,126 @@ class AuthorizationIntegrationTest {
                                 "unauthorized-transfer-" + unique())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    // -------------------------------------------------------------- listing ---
+
+    @Test
+    void customersListExactlyTheirOwnAccounts() throws Exception {
+        String owner = subject("owner");
+        Long firstAccountId = openAccountOwnedBy(owner);
+        Long secondAccountId = openAccountOwnedBy(owner);
+        openAccountOwnedBy(subject("stranger"));
+
+        mockMvc.perform(get("/api/accounts").with(customer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[*].id").value(contains(
+                        firstAccountId.intValue(),
+                        secondAccountId.intValue())))
+                .andExpect(jsonPath("$.content[*].accountKind")
+                        .value(everyItem(is("CUSTOMER"))));
+
+        // Naming themselves as the owner is the same listing, not a refusal.
+        mockMvc.perform(get("/api/accounts")
+                        .param("ownerSubject", owner)
+                        .with(customer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    void customersCannotListAnotherOwnersAccounts() throws Exception {
+        String victim = subject("victim");
+        openAccountOwnedBy(victim);
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("ownerSubject", victim)
+                        .with(customer(subject("stranger"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void customersNeverSeeSystemAccounts() throws Exception {
+        String owner = subject("owner");
+        openAccountOwnedBy(owner);
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("accountKind", "SYSTEM")
+                        .with(customer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    /**
+     * Other tests share this database, so the full listing is asserted through
+     * its ordering rather than its size: ids only grow, so the seeded cash
+     * account opens the first page and the two accounts opened here, by
+     * different owners, close the last one.
+     */
+    @Test
+    void administratorsListEveryAccountIncludingSystemAccounts() throws Exception {
+        Long firstAccountId = openAccountOwnedBy(subject("owner"));
+        Long secondAccountId = openAccountOwnedBy(subject("other-owner"));
+
+        String firstPage = mockMvc.perform(get("/api/accounts")
+                        .param("size", "1")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].accountNumber")
+                        .value("SYSTEM-CASH-AUD"))
+                .andExpect(jsonPath("$.content[0].accountKind").value("SYSTEM"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long total = ((Number) JsonPath.read(firstPage, "$.totalElements"))
+                .longValue();
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("size", "1")
+                        .param("page", String.valueOf(total - 2))
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(firstAccountId));
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("size", "1")
+                        .param("page", String.valueOf(total - 1))
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(secondAccountId));
+    }
+
+    @Test
+    void administratorsFilterByOwnerAndByKind() throws Exception {
+        String owner = subject("owner");
+        Long accountId = openAccountOwnedBy(owner);
+        openAccountOwnedBy(subject("other-owner"));
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("ownerSubject", owner)
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(accountId));
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("accountKind", "SYSTEM")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[*].accountKind")
+                        .value(everyItem(is("SYSTEM"))))
+                .andExpect(jsonPath("$.content[*].accountNumber")
+                        .value(hasItem("SYSTEM-CASH-AUD")));
+
+        mockMvc.perform(get("/api/accounts")
+                        .param("ownerSubject", owner)
+                        .param("accountKind", "SYSTEM")
+                        .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     // ----------------------------------------------------- admin permission ---
