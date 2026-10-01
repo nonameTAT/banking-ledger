@@ -1,0 +1,208 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="GTqhqTiLkqaChbd2Dj-y">
+    <mxGraphModel dx="782" dy="470" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="b_cli" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#f7f7f7;strokeColor=#888888;" value="" vertex="1">
+          <mxGeometry height="100" width="1260" x="60" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t_cli" parent="b_cli" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#888888;fontStyle=1;fontSize=12;" value="Clients &amp; external systems" vertex="1">
+          <mxGeometry height="100" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="cust" parent="b_cli" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;Customer&lt;/b&gt;&lt;br&gt;Bearer JWT · account owner" vertex="1">
+          <mxGeometry height="60" width="170" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="admin" parent="b_cli" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;Admin / Ops&lt;/b&gt;&lt;br&gt;JWT with ledger:admin scope" vertex="1">
+          <mxGeometry height="60" width="170" x="350" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="oidc" parent="b_cli" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;dashed=1;" value="&lt;b&gt;OIDC provider&lt;/b&gt;&lt;br&gt;Keycloak · Auth0 · Cognito" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="prom" parent="b_cli" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d79b00;" value="&lt;b&gt;Prometheus&lt;/b&gt; :9090 (compose profile)&lt;br&gt;alerts.yml · 6 alert rules" vertex="1">
+          <mxGeometry height="60" width="230" x="1005" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="app" parent="1" style="swimlane;startSize=30;html=1;fillColor=#d5e8d4;strokeColor=#82b366;swimlaneFillColor=#fcfefb;fontStyle=1;fontSize=13;collapsible=0;" value="Spring Boot app · banking-ledger · :8080" vertex="1">
+          <mxGeometry height="820" width="1300" x="40" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="b_pipe" parent="app" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#fffbea;strokeColor=#d6b656;" value="" vertex="1">
+          <mxGeometry height="100" width="950" x="20" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t_pipe" parent="b_pipe" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;" value="Request pipeline" vertex="1">
+          <mxGeometry height="100" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="trace" parent="b_pipe" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d6b656;" value="&lt;b&gt;Micrometer Tracing (Brave)&lt;/b&gt;&lt;br&gt;trace for every request · sampling 1.0" vertex="1">
+          <mxGeometry height="60" width="370" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="tid" parent="b_pipe" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d6b656;" value="&lt;b&gt;TraceIdFilter&lt;/b&gt;&lt;br&gt;X-Trace-Id header" vertex="1">
+          <mxGeometry height="60" width="170" x="550" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="sec" parent="b_pipe" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d6b656;" value="&lt;b&gt;Spring Security&lt;/b&gt;&lt;br&gt;OAuth2 resource server · JWT" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="b_pipe" source="trace" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="tid" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="b_pipe" source="tid" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="sec" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b_api" parent="app" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#f3f9f0;strokeColor=#82b366;" value="" vertex="1">
+          <mxGeometry height="100" width="950" x="20" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="t_api" parent="b_api" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" value="API layer" vertex="1">
+          <mxGeometry height="100" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="exh" parent="b_api" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#b85450;" value="&lt;b&gt;GlobalExceptionHandler&lt;/b&gt;&lt;br&gt;JSON errors + traceId" vertex="1">
+          <mxGeometry height="60" width="170" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ctrl" parent="b_api" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#82b366;" value="&lt;b&gt;REST controllers · Spring Web MVC&lt;/b&gt;&lt;br&gt;/api/accounts · deposits · withdrawals · transfers · reversals&lt;br&gt;ledger entries · audit logs · reconciliation · Swagger UI" vertex="1">
+          <mxGeometry height="60" width="570" x="350" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="b_api" source="ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="exh" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b_svc" parent="app" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#f8f4fa;strokeColor=#9673a6;" value="" vertex="1">
+          <mxGeometry height="290" width="950" x="20" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="t_svc" parent="b_svc" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" value="Domain services&lt;br&gt;&lt;span style=&quot;font-weight:normal;font-size:10px&quot;&gt;@Transactional&lt;br&gt;10s timeout&lt;/span&gt;" vertex="1">
+          <mxGeometry height="290" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="guard" parent="b_svc" style="rounded=1;arcSize=20;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ede4f2;strokeColor=#9673a6;" value="&lt;b&gt;Authorization&lt;/b&gt; — caller must own the account (token sub) or hold ledger:admin · enforced in the service layer" vertex="1">
+          <mxGeometry height="40" width="770" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="acc" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Account&lt;/b&gt;&lt;br&gt;create · read · freeze" vertex="1">
+          <mxGeometry height="60" width="170" x="150" y="85" as="geometry" />
+        </mxCell>
+        <mxCell id="dep" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Deposit&lt;/b&gt;&lt;br&gt;Dr system cash · Cr customer" vertex="1">
+          <mxGeometry height="60" width="170" x="350" y="85" as="geometry" />
+        </mxCell>
+        <mxCell id="wd" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Withdrawal&lt;/b&gt;&lt;br&gt;Dr customer · Cr system cash" vertex="1">
+          <mxGeometry height="60" width="170" x="550" y="85" as="geometry" />
+        </mxCell>
+        <mxCell id="tr" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Transfer&lt;/b&gt;&lt;br&gt;Dr source · Cr target" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="85" as="geometry" />
+        </mxCell>
+        <mxCell id="rev" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Reversal&lt;/b&gt;&lt;br&gt;linked correcting txn (admin)" vertex="1">
+          <mxGeometry height="60" width="170" x="150" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="aud" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Audit log&lt;/b&gt;&lt;br&gt;paginated per account" vertex="1">
+          <mxGeometry height="60" width="170" x="350" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="led" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Ledger query&lt;/b&gt;&lt;br&gt;paginated entries" vertex="1">
+          <mxGeometry height="60" width="170" x="550" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="rec" parent="b_svc" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#9673a6;" value="&lt;b&gt;Reconciliation job&lt;/b&gt;&lt;br&gt;every 5 min · reports drift" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="svcnote" parent="b_svc" style="text;html=1;whiteSpace=wrap;fontSize=10;fontStyle=2;align=center;verticalAlign=middle;fontColor=#5c4a66;" value="Each posting = 1 ledger_transaction + 2 ledger_entries · pessimistic row locks (lower account id first) · idempotent replay via referenceId + SHA-256 payload hash" vertex="1">
+          <mxGeometry height="36" width="770" x="150" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="b_per" parent="app" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#f2f7fd;strokeColor=#6c8ebf;" value="" vertex="1">
+          <mxGeometry height="100" width="950" x="20" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="t_per" parent="b_per" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" value="Persistence" vertex="1">
+          <mxGeometry height="100" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="jpa" parent="b_per" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Spring Data JPA / Hibernate&lt;/b&gt;&lt;br&gt;repositories · ddl-auto=validate · open-in-view off" vertex="1">
+          <mxGeometry height="60" width="370" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="hik" parent="b_per" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;HikariCP&lt;/b&gt;&lt;br&gt;3s connection timeout" vertex="1">
+          <mxGeometry height="60" width="170" x="550" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="fly" parent="b_per" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Flyway&lt;/b&gt;&lt;br&gt;migrations V1–V8" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="b_per" source="jpa" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="hik" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="obs" parent="app" style="swimlane;startSize=26;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;swimlaneFillColor=#fff8f0;align=left;spacingLeft=10;fontStyle=1;fontSize=12;collapsible=0;" value="Observability &amp; resilience" vertex="1">
+          <mxGeometry height="450" width="280" x="1000" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="act" parent="obs" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d79b00;" value="&lt;b&gt;Spring Boot Actuator&lt;/b&gt;&lt;br&gt;/actuator/health (no token)&lt;br&gt;/actuator/prometheus (no token)" vertex="1">
+          <mxGeometry height="80" width="230" x="25" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="met" parent="obs" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d79b00;" value="&lt;b&gt;Micrometer metrics&lt;/b&gt;&lt;br&gt;transaction errors · DB failures&lt;br&gt;reconciliation runs · differences · last success&lt;br&gt;every series published at 0" vertex="1">
+          <mxGeometry height="110" width="230" x="25" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="tmo" parent="obs" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#d79b00;" value="&lt;b&gt;Bounded timeouts&lt;/b&gt;&lt;br&gt;pool 3s · transaction 10s · SQL 30s&lt;br&gt;tested: outage · deadlock · timeout" vertex="1">
+          <mxGeometry height="80" width="230" x="25" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="obs" source="met" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" target="act" value="exposes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="app" source="sec" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=0.5;exitY=1;entryX=0.8509;entryY=0;" target="ctrl" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="app" source="ctrl" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=0.5;exitY=1;entryX=0.6299;entryY=0;" target="guard" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="app" source="b_svc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=0.3526;exitY=1;entryX=0.5;entryY=0;" target="jpa" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="app" source="b_svc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;exitX=1;exitY=0.3276;entryX=0;entryY=0.5;" target="met" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b_db" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#eef7fa;strokeColor=#10739e;" value="" vertex="1">
+          <mxGeometry height="190" width="950" x="60" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="t_db" parent="b_db" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1;fontSize=12;" value="Data store&lt;br&gt;&lt;span style=&quot;font-weight:normal;font-size:10px&quot;&gt;Postgres container&lt;/span&gt;" vertex="1">
+          <mxGeometry height="190" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="model" parent="b_db" style="shape=note;size=16;whiteSpace=wrap;html=1;fontSize=11;align=left;spacingLeft=12;fillColor=#ffffff;strokeColor=#10739e;" value="&lt;b&gt;Accounting model (double-entry)&lt;/b&gt;&lt;br&gt;Customer account: CUSTOMER / LIABILITY&lt;br&gt;SYSTEM-CASH-AUD: SYSTEM / ASSET&lt;br&gt;ledger_entries = source of truth, never edited&lt;br&gt;Account.balance = materialized for fast reads&lt;br&gt;mistakes are fixed by reversal" vertex="1">
+          <mxGeometry height="150" width="370" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" parent="b_db" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=14;fontSize=11;fillColor=#ffffff;strokeColor=#10739e;" value="&lt;b&gt;PostgreSQL 17&lt;/b&gt; · banking_ledger · port 5433&lt;br&gt;accounts · ledger_transactions · ledger_entries&lt;br&gt;audit_logs · reconciliation_records&lt;br&gt;append-only trigger on ledger_entries&lt;br&gt;statement_timeout 30s" vertex="1">
+          <mxGeometry height="150" width="370" x="550" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fontSize=10;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fillColor=#ffffff;strokeColor=#999999;" value="&lt;b&gt;Legend&lt;/b&gt;&lt;br&gt;Solid arrow — request / data path&lt;br&gt;Dashed arrow — supporting flow (keys, errors, metrics, scrape, backup)&lt;br&gt;Dashed box — external system" vertex="1">
+          <mxGeometry height="110" width="230" x="1065" y="1100" as="geometry" />
+        </mxCell>
+        <mxCell id="b_tool" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;collapsible=0;fillColor=#f7f7f7;strokeColor=#888888;" value="" vertex="1">
+          <mxGeometry height="100" width="1260" x="60" y="1330" as="geometry" />
+        </mxCell>
+        <mxCell id="t_tool" parent="b_tool" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#888888;fontStyle=1;fontSize=12;" value="Build, test &amp; ops" vertex="1">
+          <mxGeometry height="100" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="dev" parent="b_tool" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;dev-token.sh&lt;/b&gt;&lt;br&gt;HMAC JWT for local runs" vertex="1">
+          <mxGeometry height="60" width="170" x="150" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="ci" parent="b_tool" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;GitHub Actions CI&lt;/b&gt;&lt;br&gt;test → image build" vertex="1">
+          <mxGeometry height="60" width="170" x="350" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="tc" parent="b_tool" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;Testcontainers&lt;/b&gt;&lt;br&gt;postgres:17 · 173 tests" vertex="1">
+          <mxGeometry height="60" width="170" x="550" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="bk" parent="b_tool" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;backup.sh / restore.sh&lt;/b&gt;&lt;br&gt;verify → staging → swap" vertex="1">
+          <mxGeometry height="60" width="170" x="750" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="k6" parent="b_tool" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fontSize=11;fillColor=#ffffff;strokeColor=#888888;" value="&lt;b&gt;k6 load tests&lt;/b&gt;&lt;br&gt;~700–800 req/s, write-bound" vertex="1">
+          <mxGeometry height="60" width="230" x="1005" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" edge="1" parent="b_tool" source="ci" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="tc" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="cust" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.2297;entryY=0;" target="trace" value="Bearer JWT">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="admin" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.7703;entryY=0;" target="trace" value="Bearer JWT">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="oidc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="sec" value="JWKS keys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="prom" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;labelBackgroundColor=#ffffff;exitX=0.9;exitY=1;entryX=0.9;entryY=0;" target="act" value="scrape">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="hik" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.2297;entryY=0;" target="pg" value="JDBC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="fly" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#4d4d4d;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.7703;entryY=0;" target="pg" value="migrate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="bk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;endArrow=block;endFill=1;strokeColor=#8c8c8c;dashed=1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.7703;entryY=1;" target="pg" value="pg_dump / restore">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
