@@ -2,6 +2,11 @@ package com.owo.banking_ledger.account;
 
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +63,35 @@ public class AccountService {
         accessPolicy.requireAccountAccess(account);
 
         return AccountResponse.from(account);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AccountResponse> findAccounts(
+            String ownerSubject,
+            AccountKind accountKind,
+            Pageable pageable) {
+        String permittedOwner = accessPolicy.authorizeAccountListing(ownerSubject);
+
+        Specification<Account> filter = Specification.unrestricted();
+
+        if (permittedOwner != null) {
+            filter = filter.and(AccountRepository.ownedBy(permittedOwner));
+        }
+
+        if (accountKind != null) {
+            filter = filter.and(AccountRepository.ofKind(accountKind));
+        }
+
+        // Ordered by id whatever the caller asked for. Ids are unique and never
+        // change, so the order is total and every page agrees with the others.
+        Pageable byId = PageRequest.of(
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                Sort.by(Sort.Direction.ASC, "id"));
+
+        return accountRepository
+                .findAll(filter, byId)
+                .map(AccountResponse::from);
     }
 
     @Transactional

@@ -88,6 +88,36 @@ public class AccountAccessPolicy {
     }
 
     /**
+     * Decides whose accounts a listing may contain, before it runs.
+     * Administrators may list every account or narrow to any one owner. A
+     * customer is held to their own accounts: naming no owner means
+     * themselves, and naming anyone else is refused rather than quietly
+     * narrowed, so a client asking for the wrong thing is told so instead of
+     * being handed a page that looks like an answer.
+     *
+     * @param requestedOwnerSubject the owner the caller asked to filter by, or
+     *        {@code null} for none
+     * @return the owner subject the listing must be restricted to, or
+     *         {@code null} for no restriction, which only an administrator gets
+     */
+    public String authorizeAccountListing(String requestedOwnerSubject) {
+        if (caller.isAdmin()) {
+            return requestedOwnerSubject;
+        }
+
+        String subject = caller.subject();
+
+        if (requestedOwnerSubject != null
+                && !requestedOwnerSubject.equals(subject)) {
+            throw new BusinessException(
+                    BusinessErrorCode.ACCESS_DENIED,
+                    "Caller is not authorized to list accounts of another owner");
+        }
+
+        return subject;
+    }
+
+    /**
      * Gates operations that act on the bank's behalf rather than an account
      * holder's, such as freezing an account or reversing a posted transaction.
      */
