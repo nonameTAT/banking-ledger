@@ -8,6 +8,7 @@ public record AccountResponse(
         String accountNumber,
         String ownerName,
         String currency,
+        AccountKind accountKind,
         AccountStatus status,
         BigDecimal balance,
         Instant createdAt) {
@@ -18,6 +19,7 @@ public record AccountResponse(
                 account.getAccountNumber(),
                 account.getOwnerName(),
                 account.getCurrency(),
+                account.getAccountKind(),
                 account.getStatus(),
                 account.getBalance(),
                 account.getCreatedAt());

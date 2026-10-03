@@ -27,6 +27,10 @@ class OpenApiDocumentationTest {
                 .andExpect(jsonPath("$.openapi").exists())
                 .andExpect(jsonPath("$.info.title").value("Banking Ledger API"))
                 .andExpect(jsonPath("$.paths['/api/accounts']").exists())
+                .andExpect(jsonPath("$.paths['/api/accounts'].get").exists())
+                .andExpect(jsonPath(
+                        "$.components.schemas.AccountResponse.properties.accountKind")
+                        .exists())
                 .andExpect(jsonPath("$.paths['/api/accounts/{id}/freeze']").exists())
                 .andExpect(jsonPath("$.paths['/api/accounts/{id}/unfreeze']").exists())
                 .andExpect(jsonPath("$.paths['/api/accounts/{accountId}/audit-logs']").exists())
