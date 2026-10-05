@@ -3,6 +3,8 @@ package com.owo.banking_ledger.transfer;
 import com.owo.banking_ledger.ObservabilitySliceConfiguration;
 import com.owo.banking_ledger.security.ApiSecurityErrorWriter;
 import com.owo.banking_ledger.security.SecurityConfig;
+import java.math.BigDecimal;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -23,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.owo.banking_ledger.account.AccountNotFoundException;
 import com.owo.banking_ledger.common.BusinessException;
 import com.owo.banking_ledger.deposit.DuplicateTransactionException;
+import com.owo.banking_ledger.ledger.TransactionStatus;
 
 @WebMvcTest(TransferController.class)
 // The real chain is imported rather than the test default: it is what
@@ -40,6 +43,37 @@ class TransferControllerTest {
 
     @MockitoBean
     private TransferService transferService;
+
+    @Test
+    void transferReturnsCreatedWithTheSourceBalanceOnly() throws Exception {
+        when(transferService.transfer(any(TransferRequest.class)))
+                .thenReturn(new TransferResponse(
+                        30L,
+                        "transfer-001",
+                        2L,
+                        4L,
+                        new BigDecimal("20.0000"),
+                        "AUD",
+                        TransactionStatus.COMPLETED,
+                        new BigDecimal("50.0000")));
+
+        mockMvc.perform(post("/api/transfers")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceAccountId": 2,
+                                  "targetAccountId": 4,
+                                  "amount": "20.00",
+                                  "currency": "AUD",
+                                  "referenceId": "transfer-001"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.transactionId").value(30))
+                .andExpect(jsonPath("$.targetAccountId").value(4))
+                .andExpect(jsonPath("$.sourceBalanceAfter").value(50.0000))
+                .andExpect(jsonPath("$.targetBalanceAfter").doesNotExist());
+    }
 
     @Test
     void transferReturnsConflictForDuplicateReferenceId() throws Exception {
