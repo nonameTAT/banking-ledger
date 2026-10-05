@@ -128,7 +128,7 @@ class IdempotencyIntegrationTest {
     }
 
     @Test
-    void repeatedTransferReturnsTheOriginalBalancesOfBothAccounts() {
+    void repeatedTransferReturnsTheOriginalSourceBalanceAndPostsOnce() {
         Long sourceAccountId = createAccount("Idempotent Transfer Source");
         Long targetAccountId = createAccount("Idempotent Transfer Target");
         String suffix = randomSuffix();
@@ -156,9 +156,7 @@ class IdempotencyIntegrationTest {
         assertBigDecimalEquals(
                 first.sourceBalanceAfter(),
                 replay.sourceBalanceAfter());
-        assertBigDecimalEquals(
-                first.targetBalanceAfter(),
-                replay.targetBalanceAfter());
+        assertBigDecimalEquals(new BigDecimal("80.00"), replay.sourceBalanceAfter());
 
         assertBigDecimalEquals(new BigDecimal("80.00"), balanceOf(sourceAccountId));
         assertBigDecimalEquals(new BigDecimal("20.00"), balanceOf(targetAccountId));

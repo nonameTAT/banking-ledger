@@ -148,6 +148,26 @@ curl -i -X POST http://localhost:8080/api/transfers \
   }'
 ```
 
+Response shape:
+
+```json
+{
+  "transactionId": 3,
+  "referenceId": "transfer-001",
+  "sourceAccountId": 2,
+  "targetAccountId": 4,
+  "amount": 20.0,
+  "currency": "AUD",
+  "status": "COMPLETED",
+  "sourceBalanceAfter": 50.0
+}
+```
+
+The response reports the balance of the source account only, for every caller
+and on idempotent replay too. A transfer is authorized against the source, and
+the target may belong to someone else. To see the target's balance, its owner or
+an administrator reads it with `GET /api/accounts/{id}`.
+
 ## Query Account Ledger Entries
 
 ```bash

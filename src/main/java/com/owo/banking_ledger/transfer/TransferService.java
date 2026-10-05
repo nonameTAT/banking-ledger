@@ -134,6 +134,8 @@ public class TransferService {
                 transaction.getCurrency(),
                 transaction.getDescription());
 
+        // The caller is authorized for the source only, so the response
+        // reports the source balance only. The target may belong to anyone.
         return new TransferResponse(
                 transaction.getId(),
                 transaction.getReferenceId(),
@@ -142,8 +144,7 @@ public class TransferService {
                 transaction.getAmount(),
                 transaction.getCurrency(),
                 transaction.getStatus(),
-                source.getBalance(),
-                target.getBalance());
+                source.getBalance());
     }
 
     private static String fingerprint(TransferRequest request) {
@@ -170,8 +171,7 @@ public class TransferService {
                 transaction.getAmount(),
                 transaction.getCurrency(),
                 transaction.getStatus(),
-                balanceAfter(entries, request.sourceAccountId()),
-                balanceAfter(entries, request.targetAccountId()));
+                balanceAfter(entries, request.sourceAccountId()));
     }
 
     private static BigDecimal balanceAfter(
