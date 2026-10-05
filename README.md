@@ -1,6 +1,6 @@
 # Banking Ledger
 
-[![CI](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-25-blue) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-brightgreen) ![License](https://img.shields.io/badge/license-MIT-lightgrey)
+[![CI](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-25-blue) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-brightgreen) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
 
@@ -9,6 +9,10 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 - **[Capacity report](docs/capacity-report.md)** — measured throughput and latency, and where the ceiling comes from.
 - **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)** — 30.74% of requests failed, and not from load.
 - **[Recovery rehearsal](docs/recovery-rehearsal.md)** — a real restore, what it cost, and the bad dumps now refused.
+
+## Architecture
+
+![Architecture diagram: clients and an OIDC provider feed a request pipeline of tracing, trace-id filter and Spring Security; requests pass through the REST controllers to transactional domain services, then JPA, HikariCP and Flyway into PostgreSQL. Actuator, Micrometer metrics and bounded timeouts sit alongside, with Prometheus scraping them. Build, test and ops tooling runs underneath.](docs/architecture.drawio.png)
 
 ## Tech Stack
 
@@ -31,7 +35,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 
 ### User features
 
-- Create, fetch, freeze, and unfreeze customer accounts
+- Create, list, fetch, freeze, and unfreeze customer accounts
 - Deposit, withdraw, and transfer money between customer accounts
 - Reverse a posted transaction with a linked correcting transaction
 - Query paginated ledger entries and audit logs for an account
@@ -127,7 +131,7 @@ ops
 └── prometheus      # Scrape config and alert rules
 
 scripts             # backup.sh, restore.sh, and a dev token signer
-docs                # Capacity report, recovery rehearsal, API reference, UML
+docs                # Capacity report, recovery rehearsal, API reference, UML, architecture
 └── charts          # Capacity figures, and the script that regenerates them
 ```
 
@@ -223,15 +227,16 @@ An account belongs to the identity that opened it, recorded as the token's
 `sub` claim in `accounts.owner_subject`. Administrators are callers whose token
 carries the `ledger:admin` scope.
 
-| Operation | Permitted caller |
-| --- | --- |
-| Create an account | Any authenticated caller; it becomes the owner |
-| Read an account | Owner or administrator |
-| Deposit, withdraw | Owner or administrator |
-| Transfer | Owner of the **source** account, or administrator |
-| Read ledger entries, audit logs | Owner or administrator |
-| Freeze, unfreeze an account | Administrator only |
-| Reverse a transaction | Administrator only |
+| Operation                       | Permitted caller                                  |
+| ------------------------------- | ------------------------------------------------- |
+| Create an account               | Any authenticated caller; it becomes the owner    |
+| List accounts                   | Own accounts; administrators see every account    |
+| Read an account                 | Owner or administrator                            |
+| Deposit, withdraw               | Owner or administrator                            |
+| Transfer                        | Owner of the **source** account, or administrator |
+| Read ledger entries, audit logs | Owner or administrator                            |
+| Freeze, unfreeze an account     | Administrator only                                |
+| Reverse a transaction           | Administrator only                                |
 
 Freezing and reversal are administrative because they act against the account
 holder's own interest: freezing removes a customer's access to their money, and
@@ -240,6 +245,11 @@ touched.
 
 A transfer is authorized against the account the money leaves, so holding the
 receiving account is not enough to pull funds out of someone else's.
+
+Listing follows the same rule. A customer's list holds their own accounts only,
+and naming another owner in `ownerSubject` is refused with `403` rather than
+answered with an empty page. Administrators can filter by owner and by account
+kind.
 
 Refused requests answer `401 UNAUTHENTICATED` or `403 ACCESS_DENIED` in the same
 JSON error shape as every other failure. A caller asking for an account it does
@@ -260,11 +270,11 @@ SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://id.example.com/real
 Providers disagree about where permissions live in a token, so the claim, the
 authority prefix, and the administrative authority are all configurable:
 
-| Property | Default | Purpose |
-| --- | --- | --- |
-| `banking.security.authorities-claim` | `scope` | Claim listing the caller's permissions |
-| `banking.security.authority-prefix` | `SCOPE_` | Prefix added to each claim value |
-| `banking.security.admin-authority` | `SCOPE_ledger:admin` | Authority required for administrative operations |
+| Property                             | Default              | Purpose                                          |
+| ------------------------------------ | -------------------- | ------------------------------------------------ |
+| `banking.security.authorities-claim` | `scope`              | Claim listing the caller's permissions           |
+| `banking.security.authority-prefix`  | `SCOPE_`             | Prefix added to each claim value                 |
+| `banking.security.admin-authority`   | `SCOPE_ledger:admin` | Authority required for administrative operations |
 
 For Keycloak realm roles, for example, set the claim to `realm_access.roles` and
 the admin authority to match the role you grant.
@@ -323,14 +333,14 @@ rejected requests that most need an id without one.
 
 Exposed at `/actuator/prometheus`:
 
-| Metric | Type | Meaning |
-| --- | --- | --- |
-| `banking_transaction_errors_total{reason}` | counter | Money movement that did not complete, tagged by error code |
-| `banking_database_failures_total{reason}` | counter | Requests that failed on a datastore error rather than on the request itself |
-| `banking_reconciliation_runs_total{outcome}` | counter | Completed reconciliation runs, `clean` or `differences` |
-| `banking_reconciliation_failures_total{cause}` | counter | Reconciliation runs that threw instead of completing |
-| `banking_reconciliation_differences` | gauge | Accounts the last run found disagreeing with their ledger |
-| `banking_reconciliation_last_success_timestamp` | gauge | When reconciliation last completed, epoch seconds; `0` means never |
+| Metric                                          | Type    | Meaning                                                                     |
+| ----------------------------------------------- | ------- | --------------------------------------------------------------------------- |
+| `banking_transaction_errors_total{reason}`      | counter | Money movement that did not complete, tagged by error code                  |
+| `banking_database_failures_total{reason}`       | counter | Requests that failed on a datastore error rather than on the request itself |
+| `banking_reconciliation_runs_total{outcome}`    | counter | Completed reconciliation runs, `clean` or `differences`                     |
+| `banking_reconciliation_failures_total{cause}`  | counter | Reconciliation runs that threw instead of completing                        |
+| `banking_reconciliation_differences`            | gauge   | Accounts the last run found disagreeing with their ledger                   |
+| `banking_reconciliation_last_success_timestamp` | gauge   | When reconciliation last completed, epoch seconds; `0` means never          |
 
 Authentication and authorization refusals are deliberately **not** counted as
 transaction errors. A customer reaching for an account they do not own is not
@@ -383,11 +393,11 @@ A clean run is recorded too, so that "no differences" can be told apart from
 "reconciliation stopped running". `/actuator/health` reports `DOWN` while the
 last run found differences.
 
-| Property | Default | Purpose |
-| --- | --- | --- |
-| `banking.reconciliation.scheduled` | `true` | Whether the timer runs at all |
-| `banking.reconciliation.initial-delay` | `PT1M` | Wait before the first run |
-| `banking.reconciliation.interval` | `PT5M` | Gap between runs |
+| Property                               | Default | Purpose                       |
+| -------------------------------------- | ------- | ----------------------------- |
+| `banking.reconciliation.scheduled`     | `true`  | Whether the timer runs at all |
+| `banking.reconciliation.initial-delay` | `PT1M`  | Wait before the first run     |
+| `banking.reconciliation.interval`      | `PT5M`  | Gap between runs              |
 
 ### Alerting
 
@@ -401,14 +411,14 @@ docker compose --profile observability up --build
 Prometheus is then on `http://localhost:9090`, scraping the application and
 evaluating:
 
-| Alert | Fires when | Severity |
-| --- | --- | --- |
-| `BankingTransactionErrors` | Transaction errors average > 0.2/s for 10 minutes | warning |
-| `BankingDatabaseFailures` | Any datastore failure in 5 minutes | critical |
-| `BankingReconciliationDifferences` | The last run found any disagreeing account | critical |
-| `BankingReconciliationStalled` | Nothing reconciled for 30 minutes, **or never** | warning |
-| `BankingReconciliationFailing` | Runs are being attempted and throwing | warning |
-| `BankingLedgerDown` | The metrics endpoint cannot be scraped | critical |
+| Alert                              | Fires when                                        | Severity |
+| ---------------------------------- | ------------------------------------------------- | -------- |
+| `BankingTransactionErrors`         | Transaction errors average > 0.2/s for 10 minutes | warning  |
+| `BankingDatabaseFailures`          | Any datastore failure in 5 minutes                | critical |
+| `BankingReconciliationDifferences` | The last run found any disagreeing account        | critical |
+| `BankingReconciliationStalled`     | Nothing reconciled for 30 minutes, **or never**   | warning  |
+| `BankingReconciliationFailing`     | Runs are being attempted and throwing             | warning  |
+| `BankingLedgerDown`                | The metrics endpoint cannot be scraped            | critical |
 
 The thresholds differ on purpose. Some rejections are the system working
 correctly, so transaction errors alert on a sustained rate rather than a single
@@ -441,11 +451,11 @@ service stops serving the endpoints that never needed a database.
 Three bounds nest, innermost first, so a request fails at the layer that knows
 most about what went wrong rather than at the blunt outer one:
 
-| Bound | Default | What it limits |
-| --- | --- | --- |
-| `spring.datasource.hikari.connection-timeout` | 3s | Waiting for a pooled connection |
-| `spring.transaction.default-timeout` | 10s | How long a transaction may run |
-| `statement_timeout` (via `BANKING_STATEMENT_TIMEOUT_MS`) | 30s | A runaway query, in the database |
+| Bound                                                    | Default | What it limits                   |
+| -------------------------------------------------------- | ------- | -------------------------------- |
+| `spring.datasource.hikari.connection-timeout`            | 3s      | Waiting for a pooled connection  |
+| `spring.transaction.default-timeout`                     | 10s     | How long a transaction may run   |
+| `statement_timeout` (via `BANKING_STATEMENT_TIMEOUT_MS`) | 30s     | A runaway query, in the database |
 
 Reconciliation scans every account, so it is given its own longer transaction
 timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
@@ -454,7 +464,7 @@ timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
 ### What failure looks like
 
 | Failure                                      | Behaviour                                                                                                                            | Verified by                      |
-| ----------------------------------------------| --------------------------------------------------------------------------------------------------------------------------------------| ----------------------------------|
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
 | Database unreachable                         | `503 DATABASE_UNAVAILABLE`, counted as `connection`, bounded by the connection timeout                                               | `DatabaseOutageTest`             |
 | Connections killed underneath the pool       | The next request succeeds; the pool replaces them                                                                                    | `FailureHandlingIntegrationTest` |
 | Query overruns its timeout                   | Cut off, counted as `timeout`                                                                                                        | `FailureHandlingIntegrationTest` |
@@ -574,7 +584,7 @@ existed has no stored hash and cannot be verified, so retrying it returns
 
 ## Test Coverage
 
-173 tests across 36 files: service unit tests, a `@WebMvcTest` slice per
+184 tests across 36 files: service unit tests, a `@WebMvcTest` slice per
 controller, and integration tests against a throwaway Testcontainers PostgreSQL.
 The ones worth knowing about:
 
@@ -616,3 +626,7 @@ Commands are under [Run Tests](#run-tests).
 - Ledger entries are never deleted, so integration tests do not clean up posted
   data. Each test creates its own accounts and unique reference ids, and each
   test run starts from a fresh Testcontainers database.
+
+## License
+
+Released under the [MIT License](LICENSE).
