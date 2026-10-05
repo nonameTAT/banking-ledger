@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -39,7 +40,12 @@ import com.nimbusds.jwt.SignedJWT;
  *
  * <p>Two customers are used throughout: an account is opened by one of them, and
  * the other is expected to be turned away from every route to it.
+ *
+ * <p>It runs under the {@code dev} profile because its token tests sign with the
+ * development secret. The identity provider path is covered by
+ * {@link OidcResourceServerIntegrationTest}.
  */
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
