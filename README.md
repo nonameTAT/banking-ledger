@@ -165,7 +165,7 @@ the two are never mixed.
 ### Full stack, with Keycloak
 
 ```bash
-docker compose up --build -d
+docker compose up --build -d --wait        # returns once the banking realm answers
 scripts/seed-demo-users.sh                 # alice and bob (customers), ops (administrator)
 
 TOKEN=$(scripts/keycloak-token.sh alice)   # passwords default to <username>-dev-password
