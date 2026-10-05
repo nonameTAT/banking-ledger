@@ -2,735 +2,241 @@
 
 [![CI](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nonameTAT/banking-ledger/actions/workflows/ci.yml) ![Java](https://img.shields.io/badge/Java-25-blue) ![Spring Boot](https://img.shields.io/badge/Spring_Boot-4.1-brightgreen) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project models customer accounts, cash deposits, withdrawals, transfers, and account ledger entries using double-entry accounting.
-
-## Result Reports Of The Project
-
-- **[Capacity report](docs/capacity-report.md)** — measured throughput and latency, and where the ceiling comes from.
-- **[The defect the load test found](docs/capacity-report.md#a-defect-this-found)** — 30.74% of requests failed, and not from load.
-- **[Recovery rehearsal](docs/recovery-rehearsal.md)** — a real restore, what it cost, and the bad dumps now refused.
-
-## Architecture
+- **[Capacity report](docs/capacity-report.md):** what the service sustains,
+  where the ceiling comes from, and the defects load testing found.
+- **[Recovery rehearsal](docs/recovery-rehearsal.md):** a real restore, what it
+  cost, and the bad dumps now refused.
 
 [![banking-ledger target architecture, revision 3: a React SPA reaches the system only through nginx on port 443, which serves app.example.com (SPA and /api/*) and auth.example.com (Keycloak). Inside the internal Docker network sit the Spring Boot app with its five layers, Keycloak with its own database, PostgreSQL holding the ledger, Prometheus and Alertmanager. CI and the backup scripts sit outside the network.](docs/architecture/architecture.drawio.png)](docs/architecture/architecture.drawio.png)
 
-The **[architecture document](docs/architecture/architecture.md)** explains the
-diagram: request paths, the deployment boundary, identity, the client contract,
-and the planned changes for a web frontend. The diagram's source is
-[`architecture.drawio`](docs/architecture/architecture.drawio). Edit it in
-diagrams.net or the Draw.io Integration extension for VS Code, then export it
-over `architecture.drawio.png` so this image stays current.
-
-## Tech Stack
-
-- Java 25
-- Spring Boot 4.1
-- Spring Web MVC
-- Spring Data JPA / Hibernate
-- PostgreSQL 17
-- Flyway
-- Maven Wrapper
-- Docker / Docker Compose
-- Spring Security (OAuth2 resource server, JWT)
-- Keycloak (OpenID Connect identity provider)
-- Spring Boot Actuator, Micrometer, Micrometer Tracing (Brave)
-- Prometheus
-- k6 (load testing)
-- Testcontainers
-- GitHub Actions
-
-## Features
-
-### User features
-
-- Create, list, fetch, freeze, and unfreeze customer accounts
-- Deposit, withdraw, and transfer money between customer accounts
-- Reverse a posted transaction with a linked correcting transaction
-- Query paginated ledger entries and audit logs for an account
-- Replay a `referenceId` safely: the original transaction comes back instead of
-  posting twice
-- Scheduled reconciliation of balances against ledger entries, with queryable
-  results
-- Bearer-token authentication, with each caller reaching only its own accounts
-  and a separate administrative permission
-
-### Engineering feature
-
-- Pessimistic row locking on every balance-changing operation
-- Append-only ledger entries, enforced by a database trigger
-- Trace id on every request, its log lines, and its error responses
-- Metrics and Prometheus alert rules for transaction errors, database failures,
-  and reconciliation differences
-- Bounded timeouts, with verified behaviour under outages, timeouts, and
-  deadlocks
-- Global exception handling with structured JSON errors
-- Integration and concurrency tests on Testcontainers
-- Load-tested capacity figures and a rehearsed backup and restore
-
-## Accounting Model
-
-Accounts have an `accountKind` and `accountCategory`.
-
-- Customer accounts are `CUSTOMER` / `LIABILITY`.
-- The seeded system cash account is `SYSTEM` / `ASSET`.
-- Flyway seeds `SYSTEM-CASH-AUD`.
-
-A currency is supported only while a `SYSTEM-CASH-<CURRENCY>` account exists,
-because deposits and withdrawals post against it. Account creation is restricted
-to those currencies, so `AUD` is the only currency accepted until another system
-cash account is seeded. System accounts are internal, so the customer account
-API refuses to freeze or unfreeze them.
-
-Posting rules:
-
-- Deposit:
-  - Debit system cash account
-  - Credit customer account
-- Withdrawal:
-  - Debit customer account
-  - Credit system cash account
-- Transfer:
-  - Debit source customer account
-  - Credit target customer account
-
-Each business transaction creates:
-
-- one `ledger_transactions` row
-- two `ledger_entries` rows
-
-`ledger_entries` are the permanent accounting source of truth. `Account.balance`
-is a materialized balance maintained for fast reads and concurrency-safe writes.
-Business failures roll back the whole transaction; the current application does
-not persist failed ledger transactions in normal validation-failure paths.
-
-Posted entries are append-only. The entity is mapped as immutable, the
-repository exposes no update or delete operation, and a database trigger rejects
-any `UPDATE` or `DELETE` on `ledger_entries`. A mistake is corrected by posting
-a reversal, never by editing history.
-
-## Project Structure
-
-```text
-src/main/java/com/owo/banking_ledger
-├── account         # Account entity, repository, service, controller
-├── deposit         # Deposit API and business logic
-├── withdrawal      # Withdrawal API and business logic
-├── transfer        # Transfer API and business logic
-├── reversal        # Reversal API and business logic
-├── audit           # Audit log entity, service, and query API
-├── ledger          # Ledger transaction/entry entities and query API
-├── reconciliation  # Scheduled balance-vs-entries check and its query API
-├── security        # Authentication, account ownership, admin permission
-├── observability   # Trace ids, metrics, database failure classification
-└── common          # Global exception handling
-
-src/main/resources/db/migration
-├── V1__create_accounts.sql
-├── V2__create_ledger.sql
-├── V3__create_audit_logs.sql
-├── V4__add_transaction_request_hash.sql
-├── V5__ledger_entries_append_only.sql
-├── V6__add_transaction_reversal.sql
-├── V7__add_account_owner_subject.sql
-└── V8__add_reconciliation_records.sql
-
-ops
-├── keycloak        # Realm export (clients, roles, mappers, no users), database setup
-├── load            # k6 load test scripts, and the phase tagging they share
-└── prometheus      # Scrape config and alert rules
-
-scripts             # backup.sh, restore.sh, demo users and tokens for both modes
-docs                # Capacity report, recovery rehearsal, API reference, UML, architecture
-└── charts          # Capacity figures, and the script that regenerates them
-```
-
-## UML
-
-The project class diagram is available as a rendered SVG and PlantUML source:
-
-- [Project UML SVG](docs/project-uml.svg)
-- [Project UML source](docs/project-uml.puml)
-
-## Prerequisites
-
-- Docker and Docker Compose, for running the stack and for the test databases
-- Java 25, only to build or run the application outside a container
-
-## Run Locally
-
-There are two ways to run the stack. They differ in where tokens come from, and
-the two are never mixed.
-
-| Mode         | Tokens from                                    | Start with                                                             |
-| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------- |
-| Full stack   | Keycloak, as in production                     | `docker compose up --build`                                            |
-| Backend-only | `scripts/dev-token.sh`, signed with a local key | `docker compose -f compose.yaml -f compose.dev-token.yaml up --build app` |
-
-### Full stack, with Keycloak
-
-```bash
-docker compose up --build -d --wait        # returns once the banking realm answers
-scripts/seed-demo-users.sh                 # alice and bob (customers), ops (administrator)
-
-TOKEN=$(scripts/keycloak-token.sh alice)   # passwords default to <username>-dev-password
-ADMIN=$(scripts/keycloak-token.sh ops)
-curl -i http://localhost:8080/api/accounts -H "Authorization: Bearer $TOKEN"
-```
-
-Compose builds the application image from the `Dockerfile` and waits for the
-PostgreSQL healthcheck before starting the app, so Flyway never runs against a
-database that is still booting. Keycloak keeps its users in its own `keycloak`
-database on the same PostgreSQL instance; a one-shot `keycloak-db` service
-creates it if it is missing. Keycloak publishes no host port. Until nginx routes
-the public auth host to it (#30), `scripts/keycloak-token.sh` signs in from a
-container on Keycloak's network, running the same Authorization Code + PKCE flow
-the web app will. The API runs on:
-
-```text
-http://localhost:8080
-```
-
-Stop everything with `docker compose down`, or add `-v` to drop the database
-volume, which removes the Keycloak users too.
-
-### Backend-only, with development tokens
-
-```bash
-docker compose -f compose.yaml -f compose.dev-token.yaml up --build app
-TOKEN=$(scripts/dev-token.sh alice)
-```
-
-This starts the app and PostgreSQL only, with the `dev` profile on and the
-identity provider settings removed. See
-[Running without a provider](#running-without-a-provider).
-
-### Switching between the modes
-
-Each mode identifies callers differently. A development token's `sub` is
-whatever name it was minted for, such as `alice`. A Keycloak user's `sub` is a
-UUID. An account belongs to the `sub` that opened it, so accounts opened in one
-mode are invisible to the users of the other. When switching, either start from
-empty data with `docker compose down -v`, or hand the accounts to Keycloak users
-with a one-off update:
-
-```bash
-# Accounts whose owner is not a Keycloak subject
-docker compose exec postgres psql -U banking -d banking_ledger -c "
-  SELECT id, owner_subject FROM accounts
-  WHERE account_kind = 'CUSTOMER'
-    AND owner_subject !~ '^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$';"
-
-# Give alice's accounts to the Keycloak user printed by seed-demo-users.sh
-docker compose exec postgres psql -U banking -d banking_ledger -c "
-  UPDATE accounts SET owner_subject = '<keycloak sub>' WHERE owner_subject = 'alice';"
-```
-
-Data outside development never contains development subjects.
-
-### Run the application from source
-
-To iterate on the code without rebuilding the image, start only the database and
-run the app from Maven with the `dev` profile:
-
-```bash
-docker compose up -d postgres
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-```
-
-Without the `dev` profile or identity provider settings the application refuses
-to start, because it would have no way to verify a token.
-
-Database configuration:
-
-```text
-url: jdbc:postgresql://localhost:5433/banking_ledger
-database: banking_ledger
-username: banking
-password: banking
-```
-
-The application reads standard Spring environment variables, so Compose points it
-at the database over the internal network by setting `SPRING_DATASOURCE_URL`,
-`SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
-
-## Run Tests
-
-```bash
-./mvnw test
-```
-
-Tests need a running Docker daemon but no manual database setup. Every
-`@SpringBootTest` imports `TestcontainersConfiguration`, which starts a throwaway
-`postgres:17` container and wires it in through `@ServiceConnection`. Flyway
-migrates that container on startup, so each run begins from a schema built by the
-same migrations the application ships, and the local development database on port
-`5433` is never read or written.
-
-A new integration test needs `@Import(TestcontainersConfiguration.class)`
-alongside `@SpringBootTest` to get its own database.
-
-## Continuous Integration
-
-`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests, in two
-jobs:
-
-- `test` runs the full suite on Temurin 25, with Testcontainers supplying
-  PostgreSQL, and uploads the Surefire reports.
-- `image` runs after the tests pass and builds the container image from the
-  `Dockerfile`. It builds only; pushing to a registry would need credentials and
-  is deliberately left out.
-
-## Authentication and Authorization
-
-Every API request must carry a bearer token. Only the OpenAPI documents
-(`/v3/api-docs`, `/swagger-ui.html`) are reachable without one.
-
-### Who may do what
-
-An account belongs to the identity that opened it, recorded as the token's
-`sub` claim in `accounts.owner_subject`. Administrators are callers whose token
-carries the `ledger:admin` scope.
-
-| Operation                       | Permitted caller                                  |
-| ------------------------------- | ------------------------------------------------- |
-| Create an account               | Any authenticated caller; it becomes the owner    |
-| List accounts                   | Own accounts; administrators see every account    |
-| Read an account                 | Owner or administrator                            |
-| Deposit, withdraw               | Owner or administrator                            |
-| Transfer                        | Owner of the **source** account, or administrator |
-| Read ledger entries, audit logs | Owner or administrator                            |
-| Freeze, unfreeze an account     | Administrator only                                |
-| Reverse a transaction           | Administrator only                                |
-
-Freezing and reversal are administrative because they act against the account
-holder's own interest: freezing removes a customer's access to their money, and
-a reversal rewrites the outcome of a transaction across every account it
-touched.
-
-A transfer is authorized against the account the money leaves, so holding the
-receiving account is not enough to pull funds out of someone else's. For the
-same reason a transfer reports only the source account's balance: paying into
-an account does not let the caller read it. The target's owner or an
-administrator reads its balance with `GET /api/accounts/{id}`.
-
-Listing follows the same rule. A customer's list holds their own accounts only,
-and naming another owner in `ownerSubject` is refused with `403` rather than
-answered with an empty page. Administrators can filter by owner and by account
-kind.
-
-Refused requests answer `401 UNAUTHENTICATED` or `403 ACCESS_DENIED` in the same
-JSON error shape as every other failure. A caller asking for an account it does
-not own gets `403` rather than `404`, which confirms the id exists; deployments
-that treat account ids as secret should map `ACCESS_DENIED` to a not-found
-response.
-
-### Identities come from Keycloak
-
-Tokens are verified here, never issued. Outside development, Keycloak is the
-only issuer. Users sign in through the web app's public client with
-Authorization Code + PKCE. The realm, its clients, the `ledger:admin` role and
-the mappers are versioned in
-[`ops/keycloak/realm-export.json`](ops/keycloak/realm-export.json), which holds
-no users. Keycloak imports it on first start and skips it once the realm exists,
-so later edits to the file are applied in the admin console or by recreating the
-realm.
-
-| Realm item      | Setting                                                                                        |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| SPA client      | `banking-ledger-spa`: public, PKCE `S256`, an exact redirect URI, Web Origins set to the app    |
-| API client      | `banking-ledger-api`: holds the client role `ledger:admin`, granted to administrators only      |
-| Roles mapper    | The user's roles on the API client, in a top-level, multivalued `ledger_roles` access token claim |
-| Audience mapper | Adds `banking-ledger-api` to `aud`, which Keycloak does not do by default                       |
-
-An administrator's access token then carries:
-
-```json
-{
-  "iss": "https://auth.example.com/realms/banking",
-  "aud": ["banking-ledger-api"],
-  "sub": "3f9c2b1e-7a4d-4e0b-9a51-1d2c6b8e4f70",
-  "ledger_roles": ["ledger:admin"]
-}
-```
-
-A customer's token has no `ledger:admin` in `ledger_roles`, or no such claim at
-all. The application is configured with:
-
-| Property                                                 | Value                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------- |
-| `spring.security.oauth2.resourceserver.jwt.issuer-uri`   | the public issuer, `https://auth.example.com/realms/banking`        |
-| `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`  | `http://keycloak:8080/realms/banking/protocol/openid-connect/certs` |
-| `spring.security.oauth2.resourceserver.jwt.audiences`    | `banking-ledger-api`                                                |
-| `banking.security.authorities-claim`                     | `ledger_roles` (the default in `application.properties`)            |
-| `banking.security.authority-prefix`                      | `SCOPE_`                                                            |
-| `banking.security.admin-authority`                       | `SCOPE_ledger:admin`                                                |
-
-- **Issuer and keys.** The browser reaches Keycloak at the public auth host, so
-  tokens carry that host in `iss`. The app fetches the signing keys from the
-  internal address instead, but still requires the public issuer.
-- **Audience.** `issuer-uri` checks who signed a token, not whom it was issued
-  for, so `audiences` is checked as well.
-- **Roles.** Spring Security looks the claim up by its literal top-level name and
-  cannot follow a path such as Keycloak's `realm_access.roles`. That is why the
-  mapper puts the roles into `ledger_roles`. Its value `ledger:admin` becomes the
-  authority `SCOPE_ledger:admin`, which the services and `/actuator/**` check.
-
-Compose sets the three `spring.security.*` values from `BANKING_AUTH_URL`
-(default `https://auth.example.com`), and Keycloak's `KC_HOSTNAME` from the same
-variable, so the issuer Keycloak writes and the issuer the app expects cannot
-drift apart. `BANKING_APP_URL` (default `https://app.example.com`) sets the web
-app's redirect URI and allowed origin.
-
-### Running without a provider
-
-The backend-only mode verifies tokens the application signs itself, with the
-HMAC secret in `banking.security.dev-jwt-secret`. That decoder exists only under
-the `dev` profile, which nothing turns on by default. Without the profile no
-HMAC decoder exists, whatever `BANKING_DEV_JWT_SECRET` is set to. The application
-logs a warning on startup whenever the profile is active. It refuses to start if
-the secret is set together with `issuer-uri` or `jwk-set-uri`, or if there is no
-token source at all.
-
-Mint a token with the bundled script:
-
-```bash
-TOKEN=$(scripts/dev-token.sh alice)                  # a customer
-ADMIN=$(scripts/dev-token.sh ops-team ledger:admin)  # an administrator
-
-curl -i http://localhost:8080/api/accounts \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"ownerName": "Alice", "currency": "AUD"}'
-```
-
-> **Anyone holding that secret can mint a token for any account, including an
-> administrative one.** It exists only so the backend is runnable without a
-> provider. Never activate the `dev` profile anywhere else.
-
-## Observability
-
-### Trace ids
-
-Every request runs inside a trace. Its id appears in three places, all the same
-value, so a report of "this call failed at 10:42" can be followed straight into
-the logs:
-
-- the `X-Trace-Id` response header, on success and on failure alike
-- the `traceId` field of any error response body
-- the `[traceId-spanId]` field of every log line the request produced
-
-```bash
-curl -sD - http://localhost:8080/api/accounts/1 -H "Authorization: Bearer $TOKEN" \
-  | grep -i x-trace-id
-# x-trace-id: 6aa4567d7677624e63ae5f3446d079a2
-
-docker compose logs app | grep 6aa4567d7677624e63ae5f3446d079a2
-```
-
-Sampling is set to 1.0 rather than the default 0.1: the id is used to find one
-specific call's logs, which only works if every call has one.
-
-The trace-id filter is ordered deliberately, after the filter that starts the
-trace and before Spring Security. Running it later would leave exactly the
-rejected requests that most need an id without one.
-
-### Metrics
-
-Exposed at `/actuator/prometheus`:
-
-| Metric                                          | Type    | Meaning                                                                     |
-| ----------------------------------------------- | ------- | --------------------------------------------------------------------------- |
-| `banking_transaction_errors_total{reason}`      | counter | Money movement that did not complete, tagged by error code                  |
-| `banking_database_failures_total{reason}`       | counter | Requests that failed on a datastore error rather than on the request itself |
-| `banking_reconciliation_runs_total{outcome}`    | counter | Completed reconciliation runs, `clean` or `differences`                     |
-| `banking_reconciliation_failures_total{cause}`  | counter | Reconciliation runs that threw instead of completing                        |
-| `banking_reconciliation_differences`            | gauge   | Accounts the last run found disagreeing with their ledger                   |
-| `banking_reconciliation_last_success_timestamp` | gauge   | When reconciliation last completed, epoch seconds; `0` means never          |
-
-Authentication and authorization refusals are deliberately **not** counted as
-transaction errors. A customer reaching for an account they do not own is not
-the ledger failing, and alerting on it would bury real faults. A datastore
-outage is counted only as a database failure, so one incident does not read as
-two unrelated problems.
-
-**Every series is published at zero from startup rather than appearing the
-first time it is needed.** A counter that springs into existence already at one
-hides the event it was meant to report: `increase()` and `rate()` need two
-samples inside their window, so a series born at one and left alone cannot be
-told from one that was always one, and the first database failure would produce
-no alert. This is also why the tag values are drawn from fixed sets: letting the
-datastore decide how many series exist is how a metrics backend gets
-overwhelmed, so `reason` on a database failure is a category
-(`connection`, `timeout`, `lock`, `other`) and the exact exception type goes to
-the log, where the trace id already leads.
-
-Spring reports datastore trouble through two unrelated hierarchies, and both
-are counted. `DataAccessException` covers a statement that failed;
-`TransactionException` covers never getting as far as running one, which is
-what an unreachable database produces. Watching only the first would stay silent
-through an outage. Reconciliation runs on a timer and never reaches the
-exception handler, so the scheduler records its own failures too.
-
-`/actuator/health` and `/actuator/prometheus` are reachable without a token,
-because a load balancer and Prometheus generally cannot hold one. They expose
-operational counts rather than account data, and a deployment should still keep
-them on an internal network. Every other actuator endpoint needs the
-`ledger:admin` scope.
-
-### Reconciliation
-
-`Account.balance` is a materialized figure kept for fast, lock-safe reads;
-ledger entries are the source of truth. The two can only drift through a
-defect, so a scheduled job recomputes every account's balance from its entries
-and records what it finds.
-
-Results are stored, not just counted, because a metric can say that something
-drifted but not which account, by how much, or when it started:
-
-```bash
-curl -s http://localhost:8080/api/reconciliation/runs        -H "Authorization: Bearer $ADMIN"
-curl -s http://localhost:8080/api/reconciliation/differences -H "Authorization: Bearer $ADMIN"
-curl -s "http://localhost:8080/api/reconciliation/differences?accountId=2" -H "Authorization: Bearer $ADMIN"
-curl -s -X POST http://localhost:8080/api/reconciliation/runs -H "Authorization: Bearer $ADMIN"  # run it now
-```
-
-A clean run is recorded too, so that "no differences" can be told apart from
-"reconciliation stopped running". `/actuator/health` reports `DOWN` while the
-last run found differences.
-
-| Property                               | Default | Purpose                       |
-| -------------------------------------- | ------- | ----------------------------- |
-| `banking.reconciliation.scheduled`     | `true`  | Whether the timer runs at all |
-| `banking.reconciliation.initial-delay` | `PT1M`  | Wait before the first run     |
-| `banking.reconciliation.interval`      | `PT5M`  | Gap between runs              |
-
-### Alerting
-
-`ops/prometheus/alerts.yml` defines the rules. Bring the monitoring stack up
-alongside the application:
-
-```bash
-docker compose --profile observability up --build
-```
-
-Prometheus is then on `http://localhost:9090`, scraping the application and
-evaluating:
-
-| Alert                              | Fires when                                        | Severity |
-| ---------------------------------- | ------------------------------------------------- | -------- |
-| `BankingTransactionErrors`         | Transaction errors average > 0.2/s for 10 minutes | warning  |
-| `BankingDatabaseFailures`          | Any datastore failure in 5 minutes                | critical |
-| `BankingReconciliationDifferences` | The last run found any disagreeing account        | critical |
-| `BankingReconciliationStalled`     | Nothing reconciled for 30 minutes, **or never**   | warning  |
-| `BankingReconciliationFailing`     | Runs are being attempted and throwing             | warning  |
-| `BankingLedgerDown`                | The metrics endpoint cannot be scraped            | critical |
-
-The thresholds differ on purpose. Some rejections are the system working
-correctly, so transaction errors alert on a sustained rate rather than a single
-occurrence. A database failure or a balance disagreeing with its entries is
-never routine, so one is enough.
-
-`BankingReconciliationStalled` is written against the last-success timestamp
-rather than counting runs in a window, because counting cannot report a service
-whose reconciliation has failed every time since it started: the run counter
-would never move off zero, and a rule reading `== 0` on that cannot tell
-"stopped" from "never started". The gauge holds `0` until the first success, so
-`time() - 0` is enormous and the alert fires, which is the correct reading of a
-ledger that has never once been checked.
-
-## Failure Handling and Capacity
-
-Measured rather than assumed. Two reports carry the numbers:
-
-- [Capacity report](docs/capacity-report.md) — what the service sustains, and
-  the defect the load test uncovered
-- [Recovery rehearsal](docs/recovery-rehearsal.md) — a real restore, and what it
-  cost
-
-### Timeouts
-
-Nothing is allowed to wait indefinitely. Without a bound, a database that has
-stopped answering does not fail requests, it holds their threads, and the
-service stops serving the endpoints that never needed a database.
-
-Three bounds nest, innermost first, so a request fails at the layer that knows
-most about what went wrong rather than at the blunt outer one:
-
-| Bound                                                    | Default | What it limits                   |
-| -------------------------------------------------------- | ------- | -------------------------------- |
-| `spring.datasource.hikari.connection-timeout`            | 3s      | Waiting for a pooled connection  |
-| `spring.transaction.default-timeout`                     | 10s     | How long a transaction may run   |
-| `statement_timeout` (via `BANKING_STATEMENT_TIMEOUT_MS`) | 30s     | A runaway query, in the database |
-
-Reconciliation scans every account, so it is given its own longer transaction
-timeout (`banking.reconciliation.transaction-timeout`). It is still capped by
-`statement_timeout`, which is the number to raise for a large ledger.
-
-### What failure looks like
-
-| Failure                                      | Behaviour                                                                                                                            | Verified by                      |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| Database unreachable                         | `503 DATABASE_UNAVAILABLE`, counted as `connection`, bounded by the connection timeout                                               | `DatabaseOutageTest`             |
-| Connections killed underneath the pool       | The next request succeeds; the pool replaces them                                                                                    | `FailureHandlingIntegrationTest` |
-| Query overruns its timeout                   | Cut off, counted as `timeout`                                                                                                        | `FailureHandlingIntegrationTest` |
-| Deadlock                                     | PostgreSQL kills one side; the victim is counted as datastore trouble                                                                | `FailureHandlingIntegrationTest` |
-| Opposing transfers                           | Do not deadlock, because transfers always lock the lower account id first                                                            | `FailureHandlingIntegrationTest` |
-| A deposit or transfer that fails mid-request | `503 DATABASE_UNAVAILABLE` with a trace id; balances, entries and the audit row all roll back; the caller's retry posts exactly once | `RequestFailureIntegrationTest`  |
-
-The last row is the one that matters to a caller, and it is a separate claim from
-the rows above it. Those drive the datastore directly and establish that
-PostgreSQL reports trouble and that the trouble arrives classified.
-`RequestFailureIntegrationTest` posts to the real endpoints with a failure
-injected into the table the service is about to write, and checks the response,
-the rollback and the retry together — because a service that classifies a
-deadlock perfectly and still leaves half a posting behind has not handled it.
-
-A known gap: when a transaction fails **and** its rollback fails too, Spring
-replaces the original exception with the rollback's and logs "Application
-exception overridden by rollback exception". What reaches the handler then says
-only that a connection could not be rolled back, so a deadlock lands in the
-`other` bucket rather than `lock`. The exception class is still logged with the
-request's trace id, so it stays diagnosable; nothing can recover the category
-from an exception that no longer contains it.
-
-### Capacity
-
-Throughput is flat at **roughly 700–800 requests per second from 5 concurrent
-clients to 100**, with no failures at any level. Latency, meanwhile, rises in
-proportion to the clients added — a median of 6 ms at 5 becomes 109 ms at 100.
-Work in equals work out and everything extra is spent waiting, so the write path
-is already saturated at 5 concurrent writers and sizing above that buys latency,
-not throughput.
+The diagram shows the **target architecture**, the
+[architecture document](docs/architecture/architecture.md) explains it.
+
+## Overview
+
+A banking ledger API built with Spring Boot and PostgreSQL. It keeps customer
+accounts and moves money between them with double-entry accounting, and it is
+built to stay correct under retries, concurrency and failure.
+
+- **Double-entry ledger.** Deposits, withdrawals and transfers each post two
+  entries that balance. Entries are never edited. A mistake is corrected by a
+  linked reversal.
+- **Safe retries.** Every posting carries a caller-chosen `referenceId`.
+  Repeating a request returns the original result instead of posting twice.
+- **Concurrency-safe balances.** Every balance change takes row locks in a
+  fixed order.
+- **Per-account access.** Callers sign in through Keycloak. A customer reaches
+  only their own accounts; freezing, reversals and reconciliation need an
+  administrator.
+- **Self-checking.** A scheduled job reconciles every balance against its
+  entries. Trace ids, Prometheus metrics and alert rules come with it.
+- **Measured operations.** Capacity is load-tested, failure behaviour is
+  tested, and backup and restore have been rehearsed.
+
+## Results
+
+What the [capacity report](docs/capacity-report.md) and the
+[recovery rehearsal](docs/recovery-rehearsal.md) found:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/charts/capacity-saturation-dark.svg">
   <img alt="Two panels over the same concurrency axis. Throughput stays within a band of roughly 700 to 800 requests per second from 5 to 100 concurrent clients, with both passes plotted as separate dots. Below it, median, p95 and p99 latency each rise in proportion to the clients added." src="docs/charts/capacity-saturation-light.svg">
 </picture>
 
-The limit is the write path. Every deposit and withdrawal posts against the
-single `SYSTEM-CASH-AUD` account and takes a row lock on it, which serialises
-cash movement service-wide. The same shape without writes sustains around 8x the
-throughput.
+- **Throughput is flat; latency is not.** In the report's environment, a single
+  20 vCPU WSL2 host running the app, PostgreSQL and the k6 load generator
+  together, the report's workload sustained roughly 700–800 requests per second
+  from 5 to 100 concurrent clients. Each iteration is a deposit, a transfer, an
+  account read and a page of entries, against eight funded accounts. Median
+  latency rose from 6 ms to 109 ms over the same range. These figures are a
+  baseline for comparing changes, not a production promise.
+- **The ceiling is one lock.** Every deposit and withdrawal posts against the
+  single `SYSTEM-CASH-AUD` account and locks its row, which serialises cash
+  movement service-wide. The same workload without writes sustains around 8x
+  the throughput.
+- **A restore loses recent transactions.** The rehearsed restore took 12
+  seconds with about one second of downtime, and lost every transaction posted
+  after the backup. The restored ledger reconciles cleanly, so nothing detects
+  that loss afterwards. Point-in-time recovery is not implemented.
 
-Two things the report is careful about, because both were got wrong first time:
-only the steady-state hold window is measured, not the whole run including the
-ramp; and throughput varies by up to 15% between identical runs on this host, so
-it is a band rather than a figure. See the
-[capacity report](docs/capacity-report.md) for the full tables, the method, and
-the two defects this work uncovered — an optimistic-locking failure under
-contention, and a paginated read whose cost grows without bound as an account
-accumulates history.
+## Quick Start
 
-### Backup and restore
+You need Docker with Compose, and `openssl` for the token script.
 
 ```bash
-scripts/backup.sh                      # prints the path it wrote
-scripts/restore.sh backups/<file>.dump # replaces the live database
+# Start the app, PostgreSQL and Keycloak, then create demo users:
+# alice and bob (customers) and ops (administrator).
+docker compose up --build -d --wait
+scripts/seed-demo-users.sh
+
+# Sign in as alice. Passwords default to <username>-dev-password.
+TOKEN=$(scripts/keycloak-token.sh alice)
+
+# Open an account and keep its id.
+ACCOUNT=$(curl -s http://localhost:8080/api/accounts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ownerName": "Alice", "currency": "AUD"}' \
+  | sed -E 's/.*"id":([0-9]+).*/\1/')
+
+# Deposit into it. Running this again returns the same transaction instead of
+# posting twice, because the referenceId and payload are unchanged.
+curl -i http://localhost:8080/api/accounts/$ACCOUNT/deposits \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": "100.00", "currency": "AUD", "referenceId": "deposit-'"$ACCOUNT"'-1"}'
+
+# Read the ledger entries the deposit posted.
+curl -s http://localhost:8080/api/accounts/$ACCOUNT/entries \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-Neither script destroys anything it has not first checked. `backup.sh` writes to
-a `.partial` file, reads the archive back to confirm it holds the ledger tables,
-and only then renames it — so a file named like a backup is one that was read
-back successfully. `restore.sh` checks the dump, restores it into a staging
-database, and verifies that every balance there matches the entries behind it,
-all while the application keeps serving; only then does it stop the application
-and swap the two databases by rename. The database being replaced is renamed
-aside rather than dropped, so a restore of the wrong dump is still reversible.
+Every endpoint is described at `http://localhost:8080/swagger-ui.html`. Stop the
+stack with `docker compose down`; add `-v` to delete the data, Keycloak users
+included. To run the backend alone with locally signed development tokens, see
+the header of [`compose.dev-token.yaml`](compose.dev-token.yaml).
 
-A rehearsed restore took 12 seconds, of which the database was unavailable for
-about one, and lost every transaction posted after the backup was taken. The
-restored ledger reconciles cleanly, which is exactly why the loss is dangerous:
-nothing detects it afterwards. See the
-[recovery rehearsal](docs/recovery-rehearsal.md) for the limits this
-demonstrates, and for what happens to a dump that is no good.
+## Core Design
 
-## API
+### Accounting model
 
-The service describes itself at runtime, so the endpoint reference is not
-repeated here:
+| Posting    | Debit                      | Credit                     |
+| ---------- | -------------------------- | -------------------------- |
+| Deposit    | System cash account        | Customer account           |
+| Withdrawal | Customer account           | System cash account        |
+| Transfer   | Source customer account    | Target customer account    |
+
+- **Two entries per transaction.** Every business transaction writes one
+  `ledger_transactions` row and two `ledger_entries` rows. Customer accounts
+  are liabilities; the system cash account `SYSTEM-CASH-AUD` is an asset. A
+  currency is supported only while its `SYSTEM-CASH-<CURRENCY>` account exists,
+  so AUD is the only one today.
+- **Entries are the truth.** `Account.balance` is a materialized figure kept
+  for fast reads. Scheduled reconciliation recomputes every balance from its
+  entries and records any difference. It reports differences and never repairs
+  them, because a silent fix would destroy the evidence of the defect.
+- **History is append-only.** The entity is immutable, the repository has no
+  update or delete, and a database trigger rejects `UPDATE` and `DELETE` on
+  `ledger_entries`. A mistake is corrected by a reversal: a new transaction
+  with mirrored entries, linked to the original, at most once per transaction.
+
+### Consistency
+
+- **Atomic postings.** A posting's transaction, entries, balance changes and
+  audit row commit together or not at all.
+- **Locking.** Balance changes take pessimistic row locks. Transfers lock the
+  lower account id first, so opposing transfers cannot deadlock.
+- **Idempotent retries.** The ledger stores a fingerprint of the payload with
+  each `referenceId`. An identical retry returns the original result,
+  including the balance recorded at the time. A different payload under the
+  same id is refused with `409 IDEMPOTENCY_PAYLOAD_MISMATCH`. Concurrent
+  duplicates queue on a lock, so exactly one posts.
+- **Bounded failure.** Connection, transaction and statement timeouts nest, so
+  nothing waits indefinitely. A datastore failure answers
+  `503 DATABASE_UNAVAILABLE` with a trace id, and a retry with the same
+  `referenceId` posts exactly once.
+
+The [architecture document](docs/architecture/architecture.md#53-service-layer)
+and the [API reference](docs/api.md) have the details.
+
+### Authentication and authorization
+
+Every request needs a bearer token, except the OpenAPI documents. Tokens are
+verified here, never issued: Keycloak is the only issuer, and users sign in
+with Authorization Code and PKCE. The app checks each token's issuer and
+audience and reads the caller's roles from its `ledger_roles` claim. An account
+belongs to the identity, the token's `sub`, that opened it.
+
+| Operation                       | Permitted caller                                  |
+| ------------------------------- | ------------------------------------------------- |
+| Create an account               | Any authenticated caller, who becomes its owner   |
+| List accounts                   | Own accounts; administrators see every account    |
+| Read an account, entries, audit | Owner or administrator                            |
+| Deposit, withdraw               | Owner or administrator                            |
+| Transfer                        | Owner of the **source** account, or administrator |
+| Freeze, unfreeze, reverse       | Administrator only                                |
+| Reconciliation runs and results | Administrator only                                |
+
+A transfer reports only the source account's balance, since paying into an
+account is no permission to read it. A caller asking for someone else's account
+gets `403` rather than `404`, which confirms that the id exists. The token
+contract, the Keycloak realm and the development tokens are described in
+[section 4 of the architecture document](docs/architecture/architecture.md#4-identity-authentication-and-authorization).
+
+### Observability
+
+- **Tracing:** every request's trace id is returned in `X-Trace-Id`, in error
+  bodies, and on each of its log lines.
+- **Metrics:** `banking_*` series for failed transactions, datastore failures
+  and reconciliation, at `/actuator/prometheus`, each published at zero from
+  startup so the first failure is visible.
+- **Reconciliation:** every run is stored, clean or not, and is queryable
+  under `/api/reconciliation`.
+- **Alerts:** rules in [`ops/prometheus/alerts.yml`](ops/prometheus/alerts.yml);
+  `docker compose --profile observability up` adds Prometheus.
+
+## Architecture & Stack
+
+The target architecture is pictured [at the top](#banking-ledger) and explained
+in the [architecture document](docs/architecture/architecture.md).
+
+| Area       | Stack                                                                           |
+| ---------- | ------------------------------------------------------------------------------- |
+| Backend    | Java 25, Spring Boot 4.1 (Web MVC, Data JPA / Hibernate, Validation), Maven     |
+| Database   | PostgreSQL 17, with the schema owned by Flyway migrations                       |
+| Security   | Spring Security OAuth2 resource server (JWT), Keycloak (OpenID Connect)         |
+| Operations | Docker Compose, Actuator, Micrometer with Brave tracing, Prometheus, k6         |
+| Testing    | JUnit 6, Testcontainers, GitHub Actions                                         |
 
 ```text
-http://localhost:8080/swagger-ui.html   # Swagger UI
-http://localhost:8080/v3/api-docs       # OpenAPI JSON
+src/main/java/com/owo/banking_ledger
+├── account, deposit, withdrawal, transfer, reversal   # the money-moving APIs
+├── ledger, audit, reconciliation                      # entries, audit logs, balance checks
+├── security, observability, common                    # access, tracing and metrics, errors
+src/main/resources/db/migration                        # Flyway migrations
+ops                                                    # Keycloak realm, Prometheus rules, k6 scripts
+scripts                                                # backup, restore, demo users, tokens
 ```
 
-Every request needs an `Authorization: Bearer <token>` header — see
-[Authentication and Authorization](#authentication-and-authorization) for how to
-get one. A deposit looks like this:
+## Testing
 
 ```bash
-curl -i -X POST http://localhost:8080/api/accounts/2/deposits \
-  -H "Content-Type: application/json" \
-  -d '{"amount": "100.00", "currency": "AUD", "referenceId": "dep-001"}'
+./mvnw test
 ```
 
-For every endpoint, the error codes and the validation rules, see the
-**[API reference](docs/api.md)**.
+Tests need a running Docker daemon and nothing else: every integration test
+gets a throwaway PostgreSQL container from Testcontainers, migrated by the same
+Flyway scripts the application ships. CI runs the suite on every push to `main`
+and on pull requests, then builds the container image without publishing it.
 
-## Idempotency
+The tests are written around the risks a ledger carries:
 
-Every posting carries a `referenceId` that identifies the request. Alongside it
-the ledger stores a SHA-256 fingerprint of the payload that created the
-transaction, so a retry can be told apart from a reused reference id.
+- **History cannot change:** direct `UPDATE` and `DELETE` on posted entries are
+  refused by the database.
+- **Retries post once:** replays, mismatched payloads, and concurrent
+  duplicates.
+- **Concurrency:** simultaneous withdrawals and transfers, double reversals,
+  and contention on a customer's own account.
+- **Failure mid-request:** a fault injected into the table a real deposit or
+  transfer is about to write, then the response, the full rollback, and a retry
+  that posts exactly once.
+- **Datastore failures:** statement timeouts, killed connections, real
+  deadlocks and a stopped database, each failing quickly and classified.
+- **Access:** customers turned away from other customers' accounts, and tokens
+  with the wrong issuer, audience or signing key rejected.
+- **Monitoring:** metrics present before the first failure, and real balance
+  drift detected and reported by reconciliation.
 
-- Retrying with the same `referenceId` and the same payload returns the original
-  result — the same transaction id and the balance recorded at the time of the
-  original posting, not the current balance. Nothing is posted twice.
-- Reusing a `referenceId` with a different payload returns `409 Conflict` with
-  the code `IDEMPOTENCY_PAYLOAD_MISMATCH`.
-- Concurrent duplicates queue on a transaction-scoped advisory lock keyed by the
-  reference id. The first request posts, the rest replay its result.
+## Documentation
 
-The fingerprint covers the transaction type, the account ids, the amount, the
-currency, and the description. Amounts are compared by value, so `100.00` and
-`100.0000` are the same payload. A transaction written before fingerprinting
-existed has no stored hash and cannot be verified, so retrying it returns
-`409 Conflict` with the code `DUPLICATE_TRANSACTION`.
-
-## Test Coverage
-
-205 tests across 38 files: service unit tests, a `@WebMvcTest` slice per
-controller, and integration tests against a throwaway Testcontainers PostgreSQL.
-The ones worth knowing about:
-
-- **Append-only** — direct `UPDATE` and `DELETE` against posted entries, which
-  the database trigger has to refuse.
-- **Idempotency** — replay, payload mismatch, and concurrent duplicates.
-- **Concurrency** — simultaneous withdrawals and transfers, double reversal, and
-  contention on the account owner's own path, which is the case the load test
-  found missing.
-- **Request failure** — a database fault injected into the table a real deposit
-  or transfer is about to write, asserting the response, the full rollback, and
-  that the caller's retry posts exactly once.
-- **Failure handling** — statement timeouts, killed connections, real deadlocks,
-  and a stopped database, each asserted to fail bounded and classified.
-- **Metrics published at zero** — every failure series exists before anything
-  fails, so the first occurrence is a step change. The `increase()` rules in
-  `ops/prometheus/alerts.yml` cannot fire without it.
-- **Reconciliation** — real balance drift introduced, then asserted to be
-  detected, recorded, and reportable.
-
-Commands are under [Run Tests](#run-tests).
-
-## Notes
-
-- `spring.jpa.hibernate.ddl-auto=validate` is enabled, so schema changes must be made through Flyway migrations.
-- `spring.jpa.open-in-view=false` is enabled, so query services explicitly fetch required lazy relations.
-- Balance-changing operations use pessimistic write locks to protect concurrent updates.
-- Reconciliation records its outcome only after the run's transaction has
-  committed. Metrics live in memory and do not roll back, so reporting success
-  from inside the transaction would let a failed commit move the last-success
-  timestamp, which is exactly what holds off the alert for reconciliation having
-  stopped. The comparison therefore runs in its own bean, and the commit happens
-  as that call returns.
-- Reconciliation reports differences and never repairs them. Ledger entries are
-  the source of truth, and silently rewriting a balance would destroy the
-  evidence of the defect that caused the drift.
-- Authorization is enforced in the services rather than the controllers, so a
-  rule cannot be bypassed by reaching an account through a different endpoint.
-- Ledger entries are never deleted, so integration tests do not clean up posted
-  data. Each test creates its own accounts and unique reference ids, and each
-  test run starts from a fresh Testcontainers database.
+- [Architecture](docs/architecture/architecture.md): the target architecture,
+  request paths, identity and the token contract, the client contract, and the
+  planned work
+- [API reference](docs/api.md): every endpoint, error code and validation rule;
+  also served live at `/swagger-ui.html` and `/v3/api-docs`
+- [Capacity report](docs/capacity-report.md) and
+  [recovery rehearsal](docs/recovery-rehearsal.md): the measurements behind
+  [Results](#results)
 
 ## License
 

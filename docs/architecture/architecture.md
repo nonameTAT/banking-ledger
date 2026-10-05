@@ -111,7 +111,7 @@ A customer's token has no `ledger:admin` in `ledger_roles`; the claim may be abs
 | `banking.security.admin-authority` | `SCOPE_ledger:admin` | `SCOPE_ledger:admin` |
 | `banking.security.dev-jwt-secret` | unset, so no HMAC decoder exists | a local value |
 
-Three details in this table are deliberate. Spring Security's `JwtGrantedAuthoritiesConverter` looks a claim up by its literal top-level name and cannot follow a path such as `realm_access.roles`, which is why the roles go into the top-level `ledger_roles` claim; the README's advice to use `realm_access.roles` does not work and should be corrected. `issuer-uri` checks who signed a token, not whom it was issued for, so `audiences` is set as well. And when both `issuer-uri` and `jwk-set-uri` are set, Spring Boot takes keys from the internal JWKS address while still requiring the public issuer.
+Three details in this table are deliberate. Spring Security's `JwtGrantedAuthoritiesConverter` looks a claim up by its literal top-level name and cannot follow a path such as `realm_access.roles`, which is why the roles go into the top-level `ledger_roles` claim; the README's earlier advice to use `realm_access.roles` did not work and has been removed. `issuer-uri` checks who signed a token, not whom it was issued for, so `audiences` is set as well. And when both `issuer-uri` and `jwk-set-uri` are set, Spring Boot takes keys from the internal JWKS address while still requiring the public issuer.
 
 The prefix and admin authority keep their current defaults, so only `authorities-claim` changes in production. With it, the claim value `ledger:admin` becomes the authority `SCOPE_ledger:admin`, which is what the services and the `/actuator/**` rule already check.
 
@@ -121,7 +121,7 @@ The prefix and admin authority keep their current defaults, so only `authorities
 
 Development has two modes, never mixed. The full stack, `docker compose up`, uses Keycloak with the profile off. Backend-only debugging layers `compose.dev-token.yaml` on top, which turns the profile on and removes the identity provider settings. Once #30 adds `compose.override.yaml`, the backend-only command names it too.
 
-Switching from development tokens to Keycloak changes every caller's `sub`. An account opened by the development identity `alice` stays owned by `alice` and is not visible to the Keycloak user Alice, whose `sub` is a UUID. Development data is reset, or migrated with the one-off update documented in the README, when the switch is made.
+Switching from development tokens to Keycloak changes every caller's `sub`. An account opened by the development identity `alice` stays owned by `alice` and is not visible to the Keycloak user Alice, whose `sub` is a UUID. Development data is reset (`docker compose down -v`) when the switch is made, or migrated by updating `accounts.owner_subject` from each development subject to the matching Keycloak `sub`.
 
 ### 4.5 Authorization rules
 
