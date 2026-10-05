@@ -33,6 +33,59 @@ curl -i -X POST http://localhost:8080/api/accounts \
   }'
 ```
 
+## List Accounts
+
+```bash
+curl -i "http://localhost:8080/api/accounts?page=0&size=20"
+```
+
+Which accounts come back depends on the caller:
+
+| Caller        | Returns                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Customer      | Accounts whose owner is the caller's `sub`                                                    |
+| Administrator | All accounts, system accounts included; optional filters `ownerSubject` and `accountKind`     |
+
+- A customer passing `ownerSubject` for anyone but themselves gets
+  `403 ACCESS_DENIED`. The request is refused rather than narrowed to an empty
+  page.
+- `accountKind` is `CUSTOMER` or `SYSTEM`. Any other value returns
+  `400 INVALID_REQUEST`. A customer may pass it too, but owns only customer
+  accounts.
+- Results are ordered by `id` ascending; a `sort` parameter is ignored.
+
+```bash
+# Administrator: one owner's accounts, or only the system accounts
+curl -i "http://localhost:8080/api/accounts?ownerSubject=alice"
+curl -i "http://localhost:8080/api/accounts?accountKind=SYSTEM"
+```
+
+Response shape:
+
+```json
+{
+  "content": [
+    {
+      "id": 2,
+      "accountNumber": "ABCDEF1234567890",
+      "ownerName": "Alice",
+      "currency": "AUD",
+      "accountKind": "CUSTOMER",
+      "status": "ACTIVE",
+      "balance": 100.0,
+      "createdAt": "2026-07-08T00:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
+
+`accountKind` appears on every account response, so a client can tell system
+accounts, which cannot be frozen, from customer accounts.
+
 ## Get Account
 
 ```bash
@@ -233,8 +286,9 @@ Examples:
 - Missing account returns `404 Not Found`.
 - Invalid amount or self-transfer returns `400 Bad Request`.
 - Missing, expired, or untrusted token returns `401 Unauthorized`.
-- Reaching an account the caller does not own, or an administrative operation
-  without the `ledger:admin` scope, returns `403 Forbidden`.
+- Reaching an account the caller does not own, listing another owner's
+  accounts, or an administrative operation without the `ledger:admin` scope,
+  returns `403 Forbidden`.
 - A datastore failure returns `503 Service Unavailable` and is counted
   separately from errors the request itself caused.
 
