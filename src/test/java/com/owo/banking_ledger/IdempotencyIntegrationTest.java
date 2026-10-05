@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
@@ -53,6 +54,7 @@ import com.owo.banking_ledger.transfer.TransferService;
  * reused reference id carrying a different payload is rejected, and concurrent
  * duplicates post exactly once.
  */
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")

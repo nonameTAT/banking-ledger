@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -32,6 +33,7 @@ import jakarta.persistence.PersistenceContext;
  * own posting code and try to change history directly, which the database must
  * refuse.
  */
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")

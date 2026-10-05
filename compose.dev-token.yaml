@@ -1,0 +1,18 @@
+# Backend-only development: the app accepts tokens minted by
+# scripts/dev-token.sh instead of tokens from Keycloak.
+#
+#   docker compose -f compose.yaml -f compose.dev-token.yaml up --build app
+#
+# Naming the app starts it with PostgreSQL only; Keycloak is not needed. The two
+# token sources are never mixed: this file turns the "dev" profile on and removes
+# the identity provider settings, which the app would otherwise refuse to start
+# with. Never use it for a deployment.
+services:
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      # scripts/dev-token.sh signs with the same variable and default.
+      BANKING_DEV_JWT_SECRET: ${BANKING_DEV_JWT_SECRET:-local-development-only-secret-do-not-deploy}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: !reset null
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: !reset null
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: !reset null

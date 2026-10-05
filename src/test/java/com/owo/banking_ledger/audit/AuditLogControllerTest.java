@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.owo.banking_ledger.account.AccountNotFoundException;
 
+@ActiveProfiles("dev")
 @WebMvcTest(AuditLogController.class)
 // The real chain is imported rather than the test default: it is what
 // disables CSRF for these token-authenticated endpoints, so a POST here

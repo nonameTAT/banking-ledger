@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -33,6 +34,7 @@ import io.micrometer.core.instrument.search.Search;
  * can be followed into the logs by id, and that failures are counted somewhere
  * an alert can read them.
  */
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
