@@ -197,7 +197,7 @@ OpenAPI is served at `/v3/api-docs` with Swagger UI at `/swagger-ui.html`, both 
 
 **Transactions.** Request transactions time out after 10 s (`spring.transaction.default-timeout`). Reconciliation is the exception and is described in [section 8](#8-reconciliation).
 
-**Transfer response (planned change).** `TransferService` authorizes only the source account, because money leaving it is what needs permission; the target may belong to anyone. On `main` the response nevertheless includes `targetBalanceAfter`, both on first submission and on replay. Account ids are sequential and the minimum amount is 0.0001, so any customer could read every other customer's balance by sending them 0.0001 each. The response will carry the source balance only, on both paths. Hiding the field in the frontend would not fix this. `TransferControllerTest`, `TransferServiceTest`, `IdempotencyIntegrationTest.repeatedTransferReturnsTheOriginalBalancesOfBothAccounts` and the examples in `docs/api.md` change with it.
+**Transfer response (done).** `TransferService` authorizes only the source account, because money leaving it is what needs permission; the target may belong to anyone. The response used to include `targetBalanceAfter`, both on first submission and on replay. Account ids are sequential and the minimum amount is 0.0001, so any customer could read every other customer's balance by sending them 0.0001 each. The response now carries the source balance only, on both paths and for every caller, administrators and owners of both accounts included. A caller allowed to see the target reads it with `GET /api/accounts/{id}`. Hiding the field in the frontend would not have fixed this. `AuthorizationIntegrationTest` asserts the field is absent on first submission and on replay, and `OpenApiDocumentationTest` asserts it is gone from the OpenAPI document.
 
 ### 5.4 Persistence
 
@@ -327,7 +327,7 @@ Work proceeds in this order: authentication and the balance leak first, then the
 | 1 | HMAC decoder behind an explicit dev profile; secret moved to dev config | An OIDC-only configuration starts, with a test |
 | 1 | Keycloak with its own database, `realm-export.json`, mappers | A real token carries `aud` and `ledger_roles` as in [4.2](#42-token-contract) |
 | 1 | Production `banking.security.*`, `issuer-uri`, `jwk-set-uri`, `audiences` | Customer gets 403 on an admin endpoint, administrator gets through |
-| 1 | Transfer response without `targetBalanceAfter` | Absent on first submission and on replay, with tests |
+| 1 | Transfer response without `targetBalanceAfter` | **Done.** Absent on first submission and on replay, with tests |
 | 2 | Money as strings in every response | OpenAPI and tests updated; no amount is a JSON number |
 | 3 | nginx with two server blocks; no host ports in production | Only 443 published; dev ports bound to `127.0.0.1` |
 | 3 | SPA: login, account list, transfer, balance refresh | Acceptance criteria in [section 7](#7-client-contract) pass |

@@ -121,7 +121,7 @@ class BankingFlowIntegrationTest {
                                 .andExpect(jsonPath("$.referenceId").value(transferReferenceId))
                                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                                 .andExpect(jsonPath("$.sourceBalanceAfter").value(50.00))
-                                .andExpect(jsonPath("$.targetBalanceAfter").value(20.00));
+                                .andExpect(jsonPath("$.targetBalanceAfter").doesNotExist());
 
                 mockMvc.perform(get("/api/accounts/{accountId}/entries", sourceAccountId)
                                 .param("page", "0")

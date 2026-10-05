@@ -12,6 +12,5 @@ public record TransferResponse(
         BigDecimal amount,
         String currency,
         TransactionStatus status,
-        BigDecimal sourceBalanceAfter,
-        BigDecimal targetBalanceAfter) {
+        BigDecimal sourceBalanceAfter) {
 }
