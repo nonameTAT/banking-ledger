@@ -12,7 +12,7 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 
 ## Architecture
 
-![Architecture diagram: clients and an OIDC provider feed a request pipeline of tracing, trace-id filter and Spring Security; requests pass through the REST controllers to transactional domain services, then JPA, HikariCP and Flyway into PostgreSQL. Actuator, Micrometer metrics and bounded timeouts sit alongside, with Prometheus scraping them. Build, test and ops tooling runs underneath.](docs/architecture.drawio.png)
+![Architecture diagram: clients and an OIDC provider feed a request pipeline of tracing, trace-id filter and Spring Security; requests pass through the REST controllers to transactional domain services, then JPA, HikariCP and Flyway into PostgreSQL. Actuator, Micrometer metrics and bounded timeouts sit alongside, with Prometheus scraping them. Build, test and ops tooling runs underneath.](docs/architecture/architecture.drawio.png)
 
 ## Tech Stack
 
