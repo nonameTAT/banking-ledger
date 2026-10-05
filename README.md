@@ -14,13 +14,6 @@ A Spring Boot banking ledger API backed by PostgreSQL and Flyway. The project mo
 
 [![banking-ledger target architecture, revision 3: a React SPA reaches the system only through nginx on port 443, which serves app.example.com (SPA and /api/*) and auth.example.com (Keycloak). Inside the internal Docker network sit the Spring Boot app with its five layers, Keycloak with its own database, PostgreSQL holding the ledger, Prometheus and Alertmanager. CI and the backup scripts sit outside the network.](docs/architecture/architecture.drawio.png)](docs/architecture/architecture.drawio.png)
 
-| Colour        | Meaning                                                  |
-| ------------- | -------------------------------------------------------- |
-| Blue          | Exists on `main`                                         |
-| Green         | Planned: does not exist yet                              |
-| Yellow        | Exists, but needs the change written on it               |
-| Dashed border | Optional: built only if the condition on the box applies |
-
 The **[architecture document](docs/architecture/architecture.md)** explains the
 diagram: request paths, the deployment boundary, identity, the client contract,
 and the planned changes for a web frontend. The diagram's source is
