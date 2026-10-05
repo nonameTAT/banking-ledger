@@ -5,6 +5,7 @@ target/
 !**/src/test/**/target/
 devlogs/
 
+
 ### STS ###
 .apt_generated
 .classpath
@@ -43,3 +44,4 @@ application-local.yml
 .DS_Store
 backups/
 .claude/
+.codex/
