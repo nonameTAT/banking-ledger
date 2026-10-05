@@ -45,3 +45,4 @@ application-local.yml
 backups/
 .claude/
 .codex/
+.agents/
