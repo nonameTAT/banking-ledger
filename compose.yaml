@@ -27,13 +27,81 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/banking_ledger
       SPRING_DATASOURCE_USERNAME: banking
       SPRING_DATASOURCE_PASSWORD: banking
-      # Local stack signs and verifies its own tokens so it runs without an
-      # identity provider. Point the service at a real one by replacing this with
-      # SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI; setting both is
-      # rejected at startup.
-      BANKING_DEV_JWT_SECRET: local-development-only-secret-do-not-deploy
+      # Tokens come from Keycloak. Every token must carry the public issuer,
+      # while the signing keys are fetched from Keycloak over the internal
+      # network, and the token must be issued for the API client. The app does
+      # not wait for Keycloak: it fetches the keys when the first token arrives.
+      # compose.dev-token.yaml replaces all three with locally signed tokens.
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${BANKING_AUTH_URL:-https://auth.example.com}/realms/banking
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/banking/protocol/openid-connect/certs
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_AUDIENCES: banking-ledger-api
     ports:
       - "8080:8080"
+    restart: on-failure
+
+  # Creates Keycloak's database and user in the shared PostgreSQL instance if
+  # they are missing, then exits. It runs on every start, so an existing ledger
+  # volume gets them too.
+  keycloak-db:
+    image: postgres:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "/opt/keycloak-db/create-database.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: banking
+      PGPASSWORD: banking
+      PGDATABASE: banking_ledger
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+    volumes:
+      - ./ops/keycloak/create-database.sh:/opt/keycloak-db/create-database.sh:ro
+    restart: "no"
+
+  # The only token issuer outside backend-only development. It publishes no host
+  # port: browsers reach it through nginx at the public auth URL (#30), and the
+  # app reaches it at keycloak:8080. The realm, clients, roles and mappers are
+  # imported from ops/keycloak/realm-export.json on first start; it holds no
+  # users. scripts/seed-demo-users.sh adds demo users for development.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    command: ["start", "--import-realm"]
+    depends_on:
+      keycloak-db:
+        condition: service_completed_successfully
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+      # Fixes every URL Keycloak generates, and so the iss claim the app checks.
+      KC_HOSTNAME: ${BANKING_AUTH_URL:-https://auth.example.com}
+      # nginx terminates TLS and forwards the original host and scheme.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      # A temporary administrator for the master realm, created only while it
+      # has none. Override both for anything but local development.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Substituted into realm-export.json for the web app's exact redirect URI
+      # and allowed origin.
+      BANKING_APP_URL: ${BANKING_APP_URL:-https://app.example.com}
+    volumes:
+      - ./ops/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      # The image has no curl, so the readiness endpoint on the management port
+      # is read over bash's /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000
+          && printf 'GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+          && grep -q '"status": *"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     restart: on-failure
 
   # Not started by a plain `docker compose up`; bring it up with

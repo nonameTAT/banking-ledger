@@ -1,0 +1,97 @@
+{
+  "realm": "banking",
+  "displayName": "Banking Ledger",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "client": {
+      "banking-ledger-api": [
+        {
+          "name": "ledger:admin",
+          "description": "Administrative operations on the ledger: freeze and unfreeze accounts, reverse transactions, reconciliation. Grant it to administrators and nobody else.",
+          "composite": false,
+          "clientRole": true
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "banking-ledger-api",
+      "name": "Banking Ledger API",
+      "description": "The resource server. It holds the ledger:admin role and is the audience of every access token. Nobody signs in to it.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false
+    },
+    {
+      "clientId": "banking-ledger-spa",
+      "name": "Banking Ledger web app",
+      "description": "The browser app. A public client, since a browser cannot keep a secret, so it signs in with Authorization Code and PKCE only.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "fullScopeAllowed": true,
+      "rootUrl": "${BANKING_APP_URL}",
+      "baseUrl": "${BANKING_APP_URL}/",
+      "redirectUris": [
+        "${BANKING_APP_URL}/"
+      ],
+      "webOrigins": [
+        "${BANKING_APP_URL}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${BANKING_APP_URL}/"
+      },
+      "protocolMappers": [
+        {
+          "name": "ledger roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "banking-ledger-api",
+            "claim.name": "ledger_roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "ledger api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "banking-ledger-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

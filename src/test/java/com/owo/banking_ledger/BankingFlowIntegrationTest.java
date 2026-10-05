@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
@@ -37,6 +38,7 @@ import com.owo.banking_ledger.ledger.LedgerTransactionRepository;
 import com.owo.banking_ledger.ledger.TransactionStatus;
 import com.owo.banking_ledger.ledger.TransactionType;
 
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")

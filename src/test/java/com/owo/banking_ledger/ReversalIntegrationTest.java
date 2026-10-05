@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 
@@ -57,6 +58,7 @@ import org.springframework.security.test.context.support.WithMockUser;
  * A reversal corrects a posted transaction by adding new mirrored entries. The
  * original transaction and its entries stay exactly as they were posted.
  */
+@ActiveProfiles("dev")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 @WithMockUser(username = "integration-tests", authorities = "SCOPE_ledger:admin")

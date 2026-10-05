@@ -28,6 +28,7 @@ components exist on `main` and which are planned.
 - Maven Wrapper
 - Docker / Docker Compose
 - Spring Security (OAuth2 resource server, JWT)
+- Keycloak (OpenID Connect identity provider)
 - Spring Boot Actuator, Micrometer, Micrometer Tracing (Brave)
 - Prometheus
 - k6 (load testing)
@@ -130,10 +131,11 @@ src/main/resources/db/migration
 └── V8__add_reconciliation_records.sql
 
 ops
+├── keycloak        # Realm export (clients, roles, mappers, no users), database setup
 ├── load            # k6 load test scripts, and the phase tagging they share
 └── prometheus      # Scrape config and alert rules
 
-scripts             # backup.sh, restore.sh, and a dev token signer
+scripts             # backup.sh, restore.sh, demo users and tokens for both modes
 docs                # Capacity report, recovery rehearsal, API reference, UML, architecture
 └── charts          # Capacity figures, and the script that regenerates them
 ```
@@ -152,32 +154,87 @@ The project class diagram is available as a rendered SVG and PlantUML source:
 
 ## Run Locally
 
-Start the application and its database with a single command:
+There are two ways to run the stack. They differ in where tokens come from, and
+the two are never mixed.
+
+| Mode         | Tokens from                                    | Start with                                                             |
+| ------------ | ---------------------------------------------- | ---------------------------------------------------------------------- |
+| Full stack   | Keycloak, as in production                     | `docker compose up --build`                                            |
+| Backend-only | `scripts/dev-token.sh`, signed with a local key | `docker compose -f compose.yaml -f compose.dev-token.yaml up --build app` |
+
+### Full stack, with Keycloak
 
 ```bash
-docker compose up --build
+docker compose up --build -d
+scripts/seed-demo-users.sh                 # alice and bob (customers), ops (administrator)
+
+TOKEN=$(scripts/keycloak-token.sh alice)   # passwords default to <username>-dev-password
+ADMIN=$(scripts/keycloak-token.sh ops)
+curl -i http://localhost:8080/api/accounts -H "Authorization: Bearer $TOKEN"
 ```
 
 Compose builds the application image from the `Dockerfile` and waits for the
 PostgreSQL healthcheck before starting the app, so Flyway never runs against a
-database that is still booting. The API runs on:
+database that is still booting. Keycloak keeps its users in its own `keycloak`
+database on the same PostgreSQL instance; a one-shot `keycloak-db` service
+creates it if it is missing. Keycloak publishes no host port. Until nginx routes
+the public auth host to it (#30), `scripts/keycloak-token.sh` signs in from a
+container on Keycloak's network, running the same Authorization Code + PKCE flow
+the web app will. The API runs on:
 
 ```text
 http://localhost:8080
 ```
 
 Stop everything with `docker compose down`, or add `-v` to drop the database
-volume and start from empty tables.
+volume, which removes the Keycloak users too.
+
+### Backend-only, with development tokens
+
+```bash
+docker compose -f compose.yaml -f compose.dev-token.yaml up --build app
+TOKEN=$(scripts/dev-token.sh alice)
+```
+
+This starts the app and PostgreSQL only, with the `dev` profile on and the
+identity provider settings removed. See
+[Running without a provider](#running-without-a-provider).
+
+### Switching between the modes
+
+Each mode identifies callers differently. A development token's `sub` is
+whatever name it was minted for, such as `alice`. A Keycloak user's `sub` is a
+UUID. An account belongs to the `sub` that opened it, so accounts opened in one
+mode are invisible to the users of the other. When switching, either start from
+empty data with `docker compose down -v`, or hand the accounts to Keycloak users
+with a one-off update:
+
+```bash
+# Accounts whose owner is not a Keycloak subject
+docker compose exec postgres psql -U banking -d banking_ledger -c "
+  SELECT id, owner_subject FROM accounts
+  WHERE account_kind = 'CUSTOMER'
+    AND owner_subject !~ '^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$';"
+
+# Give alice's accounts to the Keycloak user printed by seed-demo-users.sh
+docker compose exec postgres psql -U banking -d banking_ledger -c "
+  UPDATE accounts SET owner_subject = '<keycloak sub>' WHERE owner_subject = 'alice';"
+```
+
+Data outside development never contains development subjects.
 
 ### Run the application from source
 
 To iterate on the code without rebuilding the image, start only the database and
-run the app from Maven:
+run the app from Maven with the `dev` profile:
 
 ```bash
 docker compose up -d postgres
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
+
+Without the `dev` profile or identity provider settings the application refuses
+to start, because it would have no way to verify a token.
 
 Database configuration:
 
@@ -263,34 +320,72 @@ not own gets `403` rather than `404`, which confirms the id exists; deployments
 that treat account ids as secret should map `ACCESS_DENIED` to a not-found
 response.
 
-### Identities come from an external provider
+### Identities come from Keycloak
 
-Tokens are verified here, never issued. Point the service at an OIDC provider
-(Keycloak, Auth0, Cognito, Entra ID) and it fetches and caches that provider's
-signing keys:
+Tokens are verified here, never issued. Outside development, Keycloak is the
+only issuer. Users sign in through the web app's public client with
+Authorization Code + PKCE. The realm, its clients, the `ledger:admin` role and
+the mappers are versioned in
+[`ops/keycloak/realm-export.json`](ops/keycloak/realm-export.json), which holds
+no users. Keycloak imports it on first start and skips it once the realm exists,
+so later edits to the file are applied in the admin console or by recreating the
+realm.
 
-```bash
-SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://id.example.com/realms/banking
+| Realm item      | Setting                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| SPA client      | `banking-ledger-spa`: public, PKCE `S256`, an exact redirect URI, Web Origins set to the app    |
+| API client      | `banking-ledger-api`: holds the client role `ledger:admin`, granted to administrators only      |
+| Roles mapper    | The user's roles on the API client, in a top-level, multivalued `ledger_roles` access token claim |
+| Audience mapper | Adds `banking-ledger-api` to `aud`, which Keycloak does not do by default                       |
+
+An administrator's access token then carries:
+
+```json
+{
+  "iss": "https://auth.example.com/realms/banking",
+  "aud": ["banking-ledger-api"],
+  "sub": "3f9c2b1e-7a4d-4e0b-9a51-1d2c6b8e4f70",
+  "ledger_roles": ["ledger:admin"]
+}
 ```
 
-Providers disagree about where permissions live in a token, so the claim, the
-authority prefix, and the administrative authority are all configurable:
+A customer's token has no `ledger:admin` in `ledger_roles`, or no such claim at
+all. The application is configured with:
 
-| Property                             | Default              | Purpose                                          |
-| ------------------------------------ | -------------------- | ------------------------------------------------ |
-| `banking.security.authorities-claim` | `scope`              | Claim listing the caller's permissions           |
-| `banking.security.authority-prefix`  | `SCOPE_`             | Prefix added to each claim value                 |
-| `banking.security.admin-authority`   | `SCOPE_ledger:admin` | Authority required for administrative operations |
+| Property                                                 | Value                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `spring.security.oauth2.resourceserver.jwt.issuer-uri`   | the public issuer, `https://auth.example.com/realms/banking`        |
+| `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`  | `http://keycloak:8080/realms/banking/protocol/openid-connect/certs` |
+| `spring.security.oauth2.resourceserver.jwt.audiences`    | `banking-ledger-api`                                                |
+| `banking.security.authorities-claim`                     | `ledger_roles` (the default in `application.properties`)            |
+| `banking.security.authority-prefix`                      | `SCOPE_`                                                            |
+| `banking.security.admin-authority`                       | `SCOPE_ledger:admin`                                                |
 
-For Keycloak realm roles, for example, set the claim to `realm_access.roles` and
-the admin authority to match the role you grant.
+- **Issuer and keys.** The browser reaches Keycloak at the public auth host, so
+  tokens carry that host in `iss`. The app fetches the signing keys from the
+  internal address instead, but still requires the public issuer.
+- **Audience.** `issuer-uri` checks who signed a token, not whom it was issued
+  for, so `audiences` is checked as well.
+- **Roles.** Spring Security looks the claim up by its literal top-level name and
+  cannot follow a path such as Keycloak's `realm_access.roles`. That is why the
+  mapper puts the roles into `ledger_roles`. Its value `ledger:admin` becomes the
+  authority `SCOPE_ledger:admin`, which the services and `/actuator/**` check.
+
+Compose sets the three `spring.security.*` values from `BANKING_AUTH_URL`
+(default `https://auth.example.com`), and Keycloak's `KC_HOSTNAME` from the same
+variable, so the issuer Keycloak writes and the issuer the app expects cannot
+drift apart. `BANKING_APP_URL` (default `https://app.example.com`) sets the web
+app's redirect URI and allowed origin.
 
 ### Running without a provider
 
-So the stack runs end to end on its own, local development verifies tokens it
-signs itself, using the HMAC secret in `banking.security.dev-jwt-secret`. The
-application logs a warning on startup whenever this is active, and refuses to
-start if an issuer URI is configured at the same time.
+The backend-only mode verifies tokens the application signs itself, with the
+HMAC secret in `banking.security.dev-jwt-secret`. That decoder exists only under
+the `dev` profile, which nothing turns on by default. Without the profile no
+HMAC decoder exists, whatever `BANKING_DEV_JWT_SECRET` is set to. The application
+logs a warning on startup whenever the profile is active. It refuses to start if
+the secret is set together with `issuer-uri` or `jwk-set-uri`, or if there is no
+token source at all.
 
 Mint a token with the bundled script:
 
@@ -305,8 +400,8 @@ curl -i http://localhost:8080/api/accounts \
 ```
 
 > **Anyone holding that secret can mint a token for any account, including an
-> administrative one.** It exists only so the project is runnable without a
-> provider. Configure `issuer-uri` for anything else.
+> administrative one.** It exists only so the backend is runnable without a
+> provider. Never activate the `dev` profile anywhere else.
 
 ## Observability
 
@@ -590,7 +685,7 @@ existed has no stored hash and cannot be verified, so retrying it returns
 
 ## Test Coverage
 
-184 tests across 36 files: service unit tests, a `@WebMvcTest` slice per
+205 tests across 38 files: service unit tests, a `@WebMvcTest` slice per
 controller, and integration tests against a throwaway Testcontainers PostgreSQL.
 The ones worth knowing about:
 

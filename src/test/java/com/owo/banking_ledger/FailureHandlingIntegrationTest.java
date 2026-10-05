@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,6 +46,7 @@ import java.sql.SQLException;
  * the behaviour under test belongs to the driver, the pool and the database
  * between them, and a mock would only assert what this test already assumed.
  */
+@ActiveProfiles("dev")
 @SpringBootTest(properties =
         "spring.datasource.hikari.data-source-properties.ApplicationName="
                 + FailureHandlingIntegrationTest.POOL)

@@ -3,8 +3,11 @@
 # Mints an HS256 bearer token for local development, signed with the same secret
 # the application verifies against (banking.security.dev-jwt-secret).
 #
-# This exists only so the stack is usable without an identity provider. A
-# deployment trusts an external issuer, and no part of this script runs there.
+# This exists only so the backend is usable without an identity provider. The
+# app accepts these tokens only under the "dev" profile, which the backend-only
+# mode turns on:
+#   docker compose -f compose.yaml -f compose.dev-token.yaml up --build app
+# The full stack and every deployment trust Keycloak instead and answer 401.
 #
 # Usage:
 #   scripts/dev-token.sh <subject> [scope ...]

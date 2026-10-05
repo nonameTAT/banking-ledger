@@ -196,8 +196,11 @@ account's owner. Every figure above is from after the fix.
 
 ## Running it
 
+The figures were measured with locally signed tokens, so run it in the
+backend-only mode, which accepts them:
+
 ```bash
-docker compose up -d --build
+docker compose -f compose.yaml -f compose.dev-token.yaml up -d --build app
 
 TOKEN=$(TOKEN_TTL_SECONDS=7200 scripts/dev-token.sh alice)
 # Create and fund a few accounts as that same subject, then pass their ids:

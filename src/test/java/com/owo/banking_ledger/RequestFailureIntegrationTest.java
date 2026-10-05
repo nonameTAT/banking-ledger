@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -68,6 +69,7 @@ import io.micrometer.core.instrument.search.Search;
  * deadlock to land inside a chosen statement is not something a test can do
  * reliably, and injecting it is what makes the assertions above deterministic.
  */
+@ActiveProfiles("dev")
 @SpringBootTest(properties =
         "spring.datasource.hikari.data-source-properties.ApplicationName="
                 + RequestFailureIntegrationTest.POOL)

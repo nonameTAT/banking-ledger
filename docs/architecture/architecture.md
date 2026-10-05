@@ -41,7 +41,7 @@ Everything except nginx lives on the internal Docker network and publishes no ho
 | --- | --- | --- | --- | --- |
 | nginx | TLS, SPA files, reverse proxy | not present | `443` | `443` or a local port |
 | app | banking-ledger API | `8080:8080` | none | `127.0.0.1:8080:8080` |
-| keycloak | identity provider | not present | none, reached through nginx | none |
+| keycloak | identity provider | none | none, reached through nginx | none |
 | postgres | ledger and keycloak databases | `5433:5432` | none | `127.0.0.1:5433:5432` |
 | prometheus | metrics and alert rules | `9090:9090` | none | `127.0.0.1:9090:9090` |
 | alertmanager | alert routing (optional) | not present | none | none |
@@ -67,11 +67,11 @@ When nginx itself answers with 502 or 504 because the app is down or slow, the r
 
 ### 4.1 Keycloak
 
-Keycloak is the only token issuer outside development. Its configuration is versioned as `realm-export.json` in the repository, holding the realm, clients, roles and mappers but no users. User accounts, and the `sub` values that `accounts.owner_subject` refers to, live only in Keycloak's database and are protected by the backups in [section 10](#10-operations).
+**Status: existing.** Keycloak is the only token issuer outside development. It runs in `compose.yaml` (image `quay.io/keycloak/keycloak:26.8.0`, production `start` mode, no host port), and its configuration is versioned as [`ops/keycloak/realm-export.json`](../../ops/keycloak/realm-export.json), holding the realm, clients, roles and mappers but no users. Keycloak imports it on first start and skips it once the realm exists. A one-shot `keycloak-db` service creates the `keycloak` database and user on every start if they are missing, so an existing ledger volume gets them too. `scripts/seed-demo-users.sh` creates the demo users for development, CI and E2E only. User accounts, and the `sub` values that `accounts.owner_subject` refers to, live only in Keycloak's database and are protected by the backups in [section 10](#10-operations).
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `KC_HOSTNAME` | `https://auth.example.com` | Fixes the public URL, and with it the `iss` claim the app validates |
+| `KC_HOSTNAME` | `https://auth.example.com`, from `BANKING_AUTH_URL` | Fixes the public URL, and with it the `iss` claim the app validates |
 | `KC_PROXY_HEADERS` | `xforwarded` | Keycloak sits behind nginx and must trust its forwarded headers to build correct URLs |
 | SPA client | public client, PKCE `S256`, exact redirect URIs | A browser cannot keep a client secret |
 | SPA client Web Origins | `https://app.example.com` | The token and refresh calls go cross-origin from the app host to the auth host |
@@ -99,7 +99,7 @@ A customer's token has no `ledger:admin` in `ledger_roles`; the claim may be abs
 
 ### 4.3 Resource server configuration
 
-The app verifies tokens and never issues them. Production and development differ as follows.
+**Status: existing.** The app verifies tokens and never issues them. Production and development differ as follows. Compose derives `issuer-uri` and Keycloak's `KC_HOSTNAME` from the same `BANKING_AUTH_URL`, so they cannot drift apart.
 
 | Property | Production | Development profile |
 | --- | --- | --- |
@@ -117,11 +117,11 @@ The prefix and admin authority keep their current defaults, so only `authorities
 
 ### 4.4 Development tokens
 
-On `main`, `SecurityConfig.devJwtDecoder` is created whenever `banking.security.dev-jwt-secret` is present, and refuses to start if `issuer-uri` is also set. `application.properties` gives the secret a default, and `@ConditionalOnProperty` without `havingValue` matches any value other than `false`, including an empty string. So deleting the secret from Compose falls back to the default, blanking it still creates the decoder, and setting `issuer-uri` alone cannot start the app.
+**Status: existing.** `SecurityConfig.devJwtDecoder` exists only under the `dev` profile, which nothing activates by default. The secret and `authorities-claim=scope` live in `application-dev.properties`; `scripts/dev-token.sh` puts permissions in the `scope` claim. Without the profile no HMAC decoder exists, whatever `BANKING_DEV_JWT_SECRET` is set to. The app refuses to start when the secret is set together with `issuer-uri` or `jwk-set-uri`, under any profile, when the profile is on but the secret is blank, and when no token source is configured at all. `TokenSourceConfigurationTest` covers each of these against the shipped configuration files, and `OidcResourceServerIntegrationTest` starts the whole app with only OIDC settings. The tests that rely on development tokens activate the profile explicitly.
 
-The planned fix enables the HMAC decoder only under an explicit development profile, off by default, and moves the secret into that profile's configuration. A test asserts that a configuration with only OIDC settings starts. `AuthorizationIntegrationTest` reads the secret from the main configuration today, so it must activate the development profile or get its own test configuration. `scripts/dev-token.sh` puts permissions in the `scope` claim, which is why the development profile keeps `authorities-claim=scope`.
+Development has two modes, never mixed. The full stack, `docker compose up`, uses Keycloak with the profile off. Backend-only debugging layers `compose.dev-token.yaml` on top, which turns the profile on and removes the identity provider settings. Once #30 adds `compose.override.yaml`, the backend-only command names it too.
 
-Switching from development tokens to Keycloak changes every caller's `sub`. An account opened by the development identity `alice` stays owned by `alice` and is not visible to the Keycloak user Alice, whose `sub` is a UUID. Development data is reset or explicitly migrated when the switch is made.
+Switching from development tokens to Keycloak changes every caller's `sub`. An account opened by the development identity `alice` stays owned by `alice` and is not visible to the Keycloak user Alice, whose `sub` is a UUID. Development data is reset, or migrated with the one-off update documented in the README, when the switch is made.
 
 ### 4.5 Authorization rules
 
@@ -324,9 +324,9 @@ Work proceeds in this order: authentication and the balance leak first, then the
 
 | Step | Change | Done when |
 | --- | --- | --- |
-| 1 | HMAC decoder behind an explicit dev profile; secret moved to dev config | An OIDC-only configuration starts, with a test |
-| 1 | Keycloak with its own database, `realm-export.json`, mappers | A real token carries `aud` and `ledger_roles` as in [4.2](#42-token-contract) |
-| 1 | Production `banking.security.*`, `issuer-uri`, `jwk-set-uri`, `audiences` | Customer gets 403 on an admin endpoint, administrator gets through |
+| 1 | HMAC decoder behind an explicit dev profile; secret moved to dev config | **Done.** An OIDC-only configuration starts, with a test |
+| 1 | Keycloak with its own database, `realm-export.json`, mappers | **Done.** A real token carries `aud` and `ledger_roles` as in [4.2](#42-token-contract); checked by hand, automated in #32 |
+| 1 | Production `banking.security.*`, `issuer-uri`, `jwk-set-uri`, `audiences` | **Done.** Customer gets 403 on an admin endpoint, administrator gets through |
 | 1 | Transfer response without `targetBalanceAfter` | **Done.** Absent on first submission and on replay, with tests |
 | 2 | Money as strings in every response | OpenAPI and tests updated; no amount is a JSON number |
 | 3 | nginx with two server blocks; no host ports in production | Only 443 published; dev ports bound to `127.0.0.1` |
