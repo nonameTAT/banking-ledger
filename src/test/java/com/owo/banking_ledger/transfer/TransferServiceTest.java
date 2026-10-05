@@ -105,7 +105,6 @@ class TransferServiceTest {
         assertEquals("AUD", response.currency());
         assertEquals(TransactionStatus.COMPLETED, response.status());
         assertEquals(new BigDecimal("65.0000"), response.sourceBalanceAfter());
-        assertEquals(new BigDecimal("55.0000"), response.targetBalanceAfter());
         assertEquals(TransactionType.TRANSFER, transaction.getTransactionType());
         assertEquals(TransactionStatus.COMPLETED, transaction.getStatus());
 
@@ -207,8 +206,6 @@ class TransferServiceTest {
         assertEquals(TransactionStatus.COMPLETED, response.status());
         assertEquals(0, new BigDecimal("65.0000")
                 .compareTo(response.sourceBalanceAfter()));
-        assertEquals(0, new BigDecimal("35.0000")
-                .compareTo(response.targetBalanceAfter()));
 
         verify(accountRepository, never()).findByIdForUpdate(any());
         verify(transactionRepository, never()).save(any());

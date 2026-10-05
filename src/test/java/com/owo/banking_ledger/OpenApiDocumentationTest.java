@@ -1,8 +1,11 @@
 package com.owo.banking_ledger;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.not;
 import org.springframework.context.annotation.Import;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -42,5 +45,20 @@ class OpenApiDocumentationTest {
                         "Transfers",
                         "Ledger",
                         "Audit Logs")));
+    }
+
+    /**
+     * A transfer is authorized against its source account only, so its
+     * response must not describe the target. Checked against the whole
+     * document so the field cannot come back under another schema either.
+     */
+    @Test
+    void transferResponseDocumentsTheSourceBalanceOnly() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(
+                        "$.components.schemas.TransferResponse.properties.sourceBalanceAfter")
+                        .exists())
+                .andExpect(content().string(not(containsString("targetBalanceAfter"))));
     }
 }

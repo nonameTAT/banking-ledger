@@ -247,7 +247,10 @@ a reversal rewrites the outcome of a transaction across every account it
 touched.
 
 A transfer is authorized against the account the money leaves, so holding the
-receiving account is not enough to pull funds out of someone else's.
+receiving account is not enough to pull funds out of someone else's. For the
+same reason a transfer reports only the source account's balance: paying into
+an account does not let the caller read it. The target's owner or an
+administrator reads its balance with `GET /api/accounts/{id}`.
 
 Listing follows the same rule. A customer's list holds their own accounts only,
 and naming another owner in `ownerSubject` is refused with `403` rather than

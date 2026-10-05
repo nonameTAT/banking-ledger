@@ -194,6 +194,49 @@ class AuthorizationIntegrationTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 
+    /**
+     * Paying into an account is not permission to read it. Otherwise the
+     * smallest transfer would reveal the recipient's balance, which
+     * {@code GET /api/accounts/{id}} refuses to the same caller.
+     */
+    @Test
+    void payingAnotherCustomerDoesNotRevealTheirBalance() throws Exception {
+        String payer = subject("payer");
+        Long payerAccountId = openAccountOwnedBy(payer);
+        String payee = subject("payee");
+        Long payeeAccountId = openAccountOwnedBy(payee);
+        deposit(payerAccountId, customer(payer));
+        deposit(payeeAccountId, customer(payee));
+
+        assertTransferOmitsTargetBalance(
+                customer(payer), payerAccountId, payeeAccountId);
+
+        mockMvc.perform(get("/api/accounts/{id}", payeeAccountId)
+                        .with(customer(payer)))
+                .andExpect(status().isForbidden());
+    }
+
+    /** The response has one shape for every caller, not one per permission. */
+    @Test
+    void transferResponseOmitsTheTargetBalanceEvenForTheTargetsOwner() throws Exception {
+        String owner = subject("owner");
+        Long sourceAccountId = openAccountOwnedBy(owner);
+        Long targetAccountId = openAccountOwnedBy(owner);
+        deposit(sourceAccountId, customer(owner));
+
+        assertTransferOmitsTargetBalance(
+                customer(owner), sourceAccountId, targetAccountId);
+    }
+
+    @Test
+    void transferResponseOmitsTheTargetBalanceEvenForAdministrators() throws Exception {
+        Long sourceAccountId = openAccountOwnedBy(subject("owner"));
+        Long targetAccountId = openAccountOwnedBy(subject("other-owner"));
+        deposit(sourceAccountId, admin());
+
+        assertTransferOmitsTargetBalance(admin(), sourceAccountId, targetAccountId);
+    }
+
     // -------------------------------------------------------------- listing ---
 
     @Test
@@ -389,6 +432,46 @@ class AuthorizationIntegrationTest {
         assertNotNull(accountId);
 
         return accountId;
+    }
+
+    private void deposit(Long accountId, RequestPostProcessor caller) throws Exception {
+        mockMvc.perform(post("/api/accounts/{id}/deposits", accountId)
+                        .with(caller)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(depositBody("deposit-" + unique())))
+                .andExpect(status().isCreated());
+    }
+
+    /**
+     * Sends the smallest transfer allowed, then repeats it with the same
+     * reference id, and asserts that neither the first response nor the replay
+     * carries a balance for the target account.
+     */
+    private void assertTransferOmitsTargetBalance(
+            RequestPostProcessor caller,
+            Long sourceAccountId,
+            Long targetAccountId) throws Exception {
+        String body = """
+                {
+                  "sourceAccountId": %d,
+                  "targetAccountId": %d,
+                  "amount": "0.0001",
+                  "currency": "AUD",
+                  "referenceId": "%s"
+                }
+                """.formatted(sourceAccountId, targetAccountId, "probe-" + unique());
+
+        // The first attempt posts; the second, under the same reference id,
+        // is answered by idempotent replay.
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            mockMvc.perform(post("/api/transfers")
+                            .with(caller)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.sourceBalanceAfter").value(9.9999))
+                    .andExpect(jsonPath("$.targetBalanceAfter").doesNotExist());
+        }
     }
 
     /**
