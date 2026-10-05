@@ -54,38 +54,55 @@ challenge="$(printf '%s' "$verifier" | openssl dgst -sha256 -binary | b64url)"
 # shellcheck disable=SC2016 # expanded inside the container, not here
 flow='
 set -eu
+set -o pipefail
 realm=http://localhost:8080/realms/banking/protocol/openid-connect
 jar=/tmp/cookies
 encoded_redirect=$(printf "%s" "$REDIRECT_URI" | sed "s/:/%3A/g; s#/#%2F#g")
 
-page=$(curl -sS -c $jar -b $jar "$realm/auth?client_id=banking-ledger-spa&response_type=code&scope=openid&redirect_uri=$encoded_redirect&state=cli&code_challenge=$CHALLENGE&code_challenge_method=S256")
+fail() {
+    echo "$*" >&2
+    exit 1
+}
+
+# Each request is checked where it is made. A transport failure or an HTTP
+# error stops the flow there, rather than surfacing later as an empty token.
+page=$(curl -sS --fail-with-body -c $jar -b $jar \
+    "$realm/auth?client_id=banking-ledger-spa&response_type=code&scope=openid&redirect_uri=$encoded_redirect&state=cli&code_challenge=$CHALLENGE&code_challenge_method=S256") \
+    || fail "Keycloak refused the sign-in request. Is the banking realm imported?"
 
 # The form posts to the public URL; the same path is served here.
 action=$(printf "%s" "$page" \
     | sed -n "s/.*id=\"kc-form-login\"[^>]*action=\"\([^\"]*\)\".*/\1/p; s/.*action=\"\([^\"]*\)\"[^>]*id=\"kc-form-login\".*/\1/p" \
     | head -n 1 | sed "s/&amp;/\&/g; s#^https\{0,1\}://[^/]*#http://localhost:8080#")
-if [ -z "$action" ]; then
-    echo "Keycloak did not return a login page. Is the banking realm imported?" >&2
-    exit 1
-fi
+[ -n "$action" ] || fail "Keycloak did not return a login form."
 
-location=$(curl -sS -c $jar -b $jar -o /dev/null -D - \
+# A successful sign-in answers with a redirect to the app that carries the
+# code. Wrong credentials answer with the login form again, and no redirect.
+headers=$(curl -sS -c $jar -b $jar -o /dev/null -D - \
     --data-urlencode "username=$USERNAME" \
     --data-urlencode "password=$PASSWORD" \
-    "$action" | tr -d "\r" | sed -n "s/^[Ll]ocation: //p")
+    "$action") \
+    || fail "Could not submit the login form."
+location=$(printf "%s" "$headers" | tr -d "\r" | sed -n "s/^[Ll]ocation: //p")
+error=$(printf "%s" "$location" | sed -n "s/.*[?&]error=\([^&]*\).*/\1/p")
+[ -z "$error" ] || fail "Keycloak rejected the sign-in: $error"
 code=$(printf "%s" "$location" | sed -n "s/.*[?&]code=\([^&]*\).*/\1/p")
-if [ -z "$code" ]; then
-    echo "Sign-in failed for $USERNAME: wrong password, or the user does not exist." >&2
-    exit 1
-fi
+[ -n "$code" ] || fail "Sign-in failed for $USERNAME: wrong password, or the user does not exist."
 
-curl -sS "$realm/token" \
+response=$(curl -sS --fail-with-body "$realm/token" \
     --data grant_type=authorization_code \
     --data client_id=banking-ledger-spa \
     --data-urlencode "code=$code" \
     --data-urlencode "redirect_uri=$REDIRECT_URI" \
-    --data "code_verifier=$VERIFIER" \
-    | sed -n "s/.*\"access_token\":\"\([^\"]*\)\".*/\1/p"
+    --data "code_verifier=$VERIFIER") \
+    || fail "The token exchange failed: ${response:-no response}"
+
+# The image has no JSON parser, so the field is matched strictly instead: the
+# access_token member, whose value must be a JWT, three base64url segments.
+token=$(printf "%s" "$response" \
+    | sed -n "s/.*\"access_token\" *: *\"\([A-Za-z0-9_-]\{1,\}\.[A-Za-z0-9_-]\{1,\}\.[A-Za-z0-9_-]\{1,\}\)\".*/\1/p")
+[ -n "$token" ] || fail "Keycloak answered without an access token: $response"
+printf "%s\n" "$token"
 '
 
 docker run --rm \

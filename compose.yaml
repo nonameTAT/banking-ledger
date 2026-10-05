@@ -79,7 +79,6 @@ services:
       # nginx terminates TLS and forwards the original host and scheme.
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
-      KC_HEALTH_ENABLED: "true"
       # A temporary administrator for the master realm, created only while it
       # has none. Override both for anything but local development.
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
@@ -90,14 +89,16 @@ services:
     volumes:
       - ./ops/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     healthcheck:
-      # The image has no curl, so the readiness endpoint on the management port
-      # is read over bash's /dev/tcp.
+      # Healthy means the banking realm answers, not just that Keycloak runs:
+      # Keycloak reports itself ready before it has imported the realm, and
+      # anything started after `docker compose up --wait` needs the realm. The
+      # image has no curl, so the request goes over bash's /dev/tcp.
       test:
         - CMD-SHELL
         - >-
-          exec 3<>/dev/tcp/127.0.0.1/9000
-          && printf 'GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
-          && grep -q '"status": *"UP"' <&3
+          exec 3<>/dev/tcp/127.0.0.1/8080
+          && printf 'GET /realms/banking HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+          && head -n 1 <&3 | grep -q ' 200 '
       interval: 10s
       timeout: 5s
       retries: 30
